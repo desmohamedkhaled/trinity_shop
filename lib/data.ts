@@ -9,9 +9,22 @@ export type Product = {
   image: string;
   description: string;
   meaning: string;
+  length?: number | null;
+  width?: number | null;
+  height?: number | null;
+  weight?: number | null;
+  product_shipping_locations?: ProductShippingLocation[];
   featured?: boolean;
   stock?: number;
   gallery?: ProductImage[];
+};
+
+export type ProductShippingLocation = {
+  id?: string;
+  product_id?: string;
+  state: "NSW" | "VIC" | "QLD" | "WA" | "SA" | "TAS" | "ACT" | "NT";
+  suburb: string;
+  metro: string;
 };
 
 export type ProductImage = {

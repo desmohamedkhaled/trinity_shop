@@ -7,6 +7,10 @@ create table if not exists products (
   name text not null,
   description text,
   meaning text,
+  length numeric,
+  width numeric,
+  height numeric,
+  weight numeric,
   price numeric(10,2) not null default 0,
   category text,
   stock integer not null default 0,
@@ -16,6 +20,19 @@ create table if not exists products (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create table if not exists product_shipping_locations (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references products(id) on delete cascade,
+  state text not null check (state in ('NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT')),
+  suburb text not null default '',
+  metro text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (product_id, state)
+);
+
+create index if not exists product_shipping_locations_product_id_idx on product_shipping_locations(product_id);
 
 create table if not exists occasions (
   id uuid primary key default gen_random_uuid(),
@@ -149,6 +166,8 @@ alter table products enable row level security;
 create policy "public can read published products" on products
   for select using (is_published = true);
 
+alter table product_shipping_locations enable row level security;
+
 alter table occasions enable row level security;
 create policy "public can read published occasions" on occasions
   for select using (is_published = true);
@@ -168,6 +187,7 @@ create policy "admins can write settings" on site_settings for all using (exists
 
 alter table products enable row level security;
 create policy "admins manage products" on products for all using (exists (select 1 from admin_users a where a.id = auth.uid() and a.is_active = true)) with check (exists (select 1 from admin_users a where a.id = auth.uid() and a.is_active = true));
+create policy "admins manage product shipping locations" on product_shipping_locations for all using (exists (select 1 from admin_users a where a.id = auth.uid() and a.is_active = true)) with check (exists (select 1 from admin_users a where a.id = auth.uid() and a.is_active = true));
 alter table occasions enable row level security;
 create policy "admins manage occasions" on occasions for all using (exists (select 1 from admin_users a where a.id = auth.uid() and a.is_active = true)) with check (exists (select 1 from admin_users a where a.id = auth.uid() and a.is_active = true));
 

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Check, ChevronDown, ImagePlus, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
-import type { Product, ProductImage } from "@/lib/data";
+import type { Product, ProductImage, ProductShippingLocation } from "@/lib/data";
 
 type Form = Partial<Product> & {
   stock?: number;
@@ -12,6 +12,25 @@ type Form = Partial<Product> & {
 };
 
 type SelectOption = { value: string; label: string };
+
+const shippingStates = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
+
+function emptyShippingLocations(): ProductShippingLocation[] {
+  return shippingStates.map((state) => ({ state, suburb: "", metro: "" }));
+}
+
+function normalizedShippingLocations(locations: unknown): ProductShippingLocation[] {
+  const byState = new Map(
+    Array.isArray(locations)
+      ? locations.filter((location): location is ProductShippingLocation => Boolean(location && typeof location === "object" && shippingStates.includes((location as ProductShippingLocation).state)))
+        .map((location) => [location.state, location])
+      : [],
+  );
+  return shippingStates.map((state) => {
+    const location = byState.get(state);
+    return { state, suburb: location?.suburb || "", metro: location?.metro || "" };
+  });
+}
 
 function MultiSelect({
   label,
@@ -111,6 +130,11 @@ const blank: Form = {
   giftFor: [],
   is_published: true,
   featured: false,
+  length: null,
+  width: null,
+  height: null,
+  weight: null,
+  product_shipping_locations: emptyShippingLocations(),
 };
 
 export default function AdminProducts() {
@@ -186,6 +210,11 @@ export default function AdminProducts() {
       is_published: p.is_published !== false,
       occasion: p.occasion || [],
       giftFor: p.gift_for || p.giftFor || [],
+      length: p.length ?? null,
+      width: p.width ?? null,
+      height: p.height ?? null,
+      weight: p.weight ?? null,
+      product_shipping_locations: normalizedShippingLocations(p.product_shipping_locations),
     });
     setGallery(Array.isArray(p.product_images) ? [...p.product_images].sort((a, b) => a.sort_order - b.sort_order) : []);
     setGalleryFiles([]);
@@ -331,11 +360,13 @@ export default function AdminProducts() {
     const slug = slugify(form.slug || "");
     const price = Number(form.price);
     const stock = Number(form.stock);
+    const dimensions = [form.length, form.width, form.height, form.weight];
     if (!form.name?.trim()) return setError("Name is required.");
     if (!slug) return setError("Slug is required.");
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return setError("Slug must use lowercase letters, numbers, and hyphens.");
     if (!Number.isFinite(price) || price < 0) return setError("Price must be a valid non-negative number.");
     if (!Number.isInteger(stock) || stock < 0) return setError("Stock must be a valid non-negative integer.");
+    if (dimensions.some((value) => value !== null && value !== undefined && (!Number.isFinite(value) || value < 0))) return setError("Dimensions must be non-negative numbers.");
 
     setSaving(true);
 
@@ -349,7 +380,12 @@ export default function AdminProducts() {
       Number(form.price) === Number(originalProduct.price) &&
       Number(form.stock) === Number(originalProduct.stock) &&
       form.description === originalProduct.description &&
-      form.meaning === originalProduct.meaning &&
+       form.meaning === originalProduct.meaning &&
+       form.length === (originalProduct.length ?? null) &&
+       form.width === (originalProduct.width ?? null) &&
+       form.height === (originalProduct.height ?? null) &&
+       form.weight === (originalProduct.weight ?? null) &&
+       JSON.stringify(normalizedShippingLocations(form.product_shipping_locations)) === JSON.stringify(normalizedShippingLocations(originalProduct.product_shipping_locations)) &&
       JSON.stringify(form.occasion || []) === JSON.stringify(originalProduct.occasion || []) &&
       JSON.stringify(form.giftFor || []) === JSON.stringify(originalProduct.gift_for || originalProduct.giftFor || []) &&
       Boolean(form.featured) === Boolean(originalProduct.is_featured ?? originalProduct.featured) &&
@@ -357,7 +393,7 @@ export default function AdminProducts() {
     );
 
     const payload = statusOnlyUpdate
-      ? { is_published: form.is_published !== false }
+      ? { is_published: form.is_published !== false, product_shipping_locations: normalizedShippingLocations(form.product_shipping_locations) }
       : {
       ...form,
       slug,
@@ -367,8 +403,9 @@ export default function AdminProducts() {
       is_published: form.is_published !== false,
       gift_for: form.giftFor || [],
       occasion: form.occasion || [],
-      image_url: form.image_url || form.image || "",
-      };
+       image_url: form.image_url || form.image || "",
+       product_shipping_locations: normalizedShippingLocations(form.product_shipping_locations),
+       };
 
     let productTimeout: number | undefined;
     try {
@@ -772,6 +809,48 @@ const giftForOptions = Array.from(
                 className="mt-2 min-h-20 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
               />
             </label>
+
+            <div className="mt-6 border-t border-black/10 pt-5">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {(["length", "width", "height", "weight"] as const).map((dimension) => (
+                  <label key={dimension} className="min-w-0 text-sm font-bold">
+                    {dimension === "length" ? "L" : dimension === "width" ? "W" : dimension === "height" ? "H" : "Weight"}
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={form[dimension] ?? ""}
+                      onChange={(event) => setForm({ ...form, [dimension]: event.target.value === "" ? null : Number(event.target.value) })}
+                      className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-5 space-y-3">
+                {normalizedShippingLocations(form.product_shipping_locations).map((location) => (
+                  <div key={location.state} className="grid grid-cols-1 gap-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_minmax(0,1fr)] sm:items-end">
+                    <span className="pb-3 text-sm font-black text-[#0b4166]">{location.state}</span>
+                    <label className="min-w-0 text-sm font-bold">
+                      SUBURB
+                      <input
+                        value={location.suburb}
+                        onChange={(event) => setForm({ ...form, product_shipping_locations: normalizedShippingLocations(form.product_shipping_locations).map((item) => item.state === location.state ? { ...item, suburb: event.target.value } : item) })}
+                        className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
+                      />
+                    </label>
+                    <label className="min-w-0 text-sm font-bold">
+                      METRO
+                      <input
+                        value={location.metro}
+                        onChange={(event) => setForm({ ...form, product_shipping_locations: normalizedShippingLocations(form.product_shipping_locations).map((item) => item.state === location.state ? { ...item, metro: event.target.value } : item) })}
+                        className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
+                      />
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             <div className="mt-5 grid gap-3 text-sm font-semibold sm:grid-cols-2">
               <label className="flex items-center gap-3 rounded-xl border border-black/10 bg-white px-4 py-3">
