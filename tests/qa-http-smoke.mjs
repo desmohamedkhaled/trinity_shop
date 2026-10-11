@@ -4,6 +4,8 @@ const baseUrl = process.env.TEST_BASE_URL || "http://localhost:3000";
 const results = [];
 
 const publicPages = [
+
+  
   ["/", "Trinity"],
   ["/shop", "Shop meaningful gifts"],
   ["/contact", "Contact Trinity"],
