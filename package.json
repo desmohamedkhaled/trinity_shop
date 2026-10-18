@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
     "test": "node smoke-test.mjs",
-    "test:qa": "node tests/qa-http-smoke.mjs"
+    "test:qa": "node tests/qa-http-smoke.mjs",
+    "build:turbo": "next build"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
@@ -34,5 +35,8 @@
     "supabase": "^2.119.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }
