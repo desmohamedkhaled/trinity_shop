@@ -3,12 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Check, ChevronDown, ImagePlus, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
-import type { Product, ProductImage, ProductShippingLocation } from "@/lib/data";
+import type { Product, ProductImage, ProductShippingLocation, ProductVariant } from "@/lib/data";
+import { formatAUD } from "@/lib/currency";
 
 type Form = Partial<Product> & {
   stock?: number;
   image_url?: string;
   is_published?: boolean;
+  stock_status?: "In stock" | "Out of stock";
+  variants?: ProductVariant[];
 };
 
 type SelectOption = { value: string; label: string };
@@ -117,12 +120,18 @@ function slugify(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, "").replace(/[\s-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+function numericInputValue(value: number | null | undefined) {
+  return value === null || value === undefined || !Number.isFinite(value) ? "" : value;
+}
+
 const blank: Form = {
   name: "",
   slug: "",
   category: "",
   price: 0,
   stock: 0,
+  stock_status: "In stock",
+  variants: [],
   image_url: "",
   description: "",
   meaning: "",
@@ -153,6 +162,7 @@ export default function AdminProducts() {
   const [success, setSuccess] = useState("");
   const [gallery, setGallery] = useState<ProductImage[]>([]);
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  const [variantFiles, setVariantFiles] = useState<Record<string, File[]>>({});
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState({ uploaded: 0, total: 0 });
   const [originalProduct, setOriginalProduct] = useState<any | null>(null);
@@ -214,10 +224,13 @@ export default function AdminProducts() {
       width: p.width ?? null,
       height: p.height ?? null,
       weight: p.weight ?? null,
+      stock_status: p.stock_status === "Out of stock" ? "Out of stock" : "In stock",
+      variants: Array.isArray(p.product_variants) ? p.product_variants : [],
       product_shipping_locations: normalizedShippingLocations(p.product_shipping_locations),
     });
     setGallery(Array.isArray(p.product_images) ? [...p.product_images].sort((a, b) => a.sort_order - b.sort_order) : []);
     setGalleryFiles([]);
+    setVariantFiles({});
 
     setError("");
     setSuccess("");
@@ -298,6 +311,7 @@ export default function AdminProducts() {
                 setGalleryProgress({ uploaded: completedBytes, total: totalBytes });
                 return false;
               }
+
               return true;
             });
             if (pending.length && attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 1000 * 2 ** attempt));
@@ -325,6 +339,33 @@ export default function AdminProducts() {
     } finally {
       setGalleryUploading(false);
     }
+  }
+
+  async function uploadVariantGallery(productId: string, variantId: string, files: File[]) {
+    if (!files.length) return true;
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file, file.name));
+    formData.append("variant_id", variantId);
+    formData.append("metadata", JSON.stringify(files.map((_, index) => ({ stableIndex: index, clientId: crypto.randomUUID() }))));
+    const response = await fetch(`/api/admin/products/${productId}/images`, { method: "POST", body: formData });
+    const data = await response.json();
+    if (!response.ok || data.failedCount) {
+      setError(data.error || `Could not upload images for ${variantId}.`);
+      return false;
+    }
+    return true;
+  }
+
+  async function assignExistingGallery(variantId: string) {
+    if (!editing) return;
+    const response = await fetch(`/api/admin/products/${editing}/images`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ variantId, images: gallery }),
+    });
+    const data = await response.json();
+    if (!response.ok) setError(data.error || "Could not assign existing images to this option.");
+    else setSuccess("Existing product images assigned to the selected option.");
   }
 
   async function deleteGalleryImage(image: ProductImage) {
@@ -367,6 +408,17 @@ export default function AdminProducts() {
     if (!Number.isFinite(price) || price < 0) return setError("Price must be a valid non-negative number.");
     if (!Number.isInteger(stock) || stock < 0) return setError("Stock must be a valid non-negative integer.");
     if (dimensions.some((value) => value !== null && value !== undefined && (!Number.isFinite(value) || value < 0))) return setError("Dimensions must be non-negative numbers.");
+    const variants = form.variants || [];
+    const variantNames = new Set<string>();
+    for (const variant of variants) {
+      const name = variant.name.trim();
+      const normalizedName = name.toLocaleLowerCase();
+      if (!name) return setError("Each size or design needs a name.");
+      if (variantNames.has(normalizedName)) return setError("Variant names must be unique.");
+      variantNames.add(normalizedName);
+      if (!Number.isFinite(Number(variant.price)) || Number(variant.price) < 0) return setError(`Price for ${name} must be a valid non-negative number.`);
+      if (!Number.isInteger(Number(variant.stock)) || Number(variant.stock) < 0) return setError(`Stock for ${name} must be a non-negative integer.`);
+    }
 
     setSaving(true);
 
@@ -399,6 +451,8 @@ export default function AdminProducts() {
       slug,
       price,
       stock,
+      stock_status: form.stock_status || "In stock",
+      variants: form.variants || [],
       is_featured: Boolean(form.featured),
       is_published: form.is_published !== false,
       gift_for: form.giftFor || [],
@@ -439,6 +493,10 @@ export default function AdminProducts() {
       console.info("[Gallery] Product created", { id: d.id });
 
       if (!statusOnlyUpdate && !(await uploadGallery(d.id))) return;
+      const savedVariants = Array.isArray(d.product_variants) ? d.product_variants : (form.variants || []);
+      for (const variant of savedVariants) {
+        if (variantFiles[variant.id]?.length && !(await uploadVariantGallery(d.id, variant.id, variantFiles[variant.id]))) return;
+      }
 
       console.info("[Gallery] Product save complete", { id: d.id });
 
@@ -447,6 +505,7 @@ export default function AdminProducts() {
       setForm(blank);
       setGallery([]);
       setGalleryFiles([]);
+      setVariantFiles({});
       setOriginalProduct(null);
       setSuccess(editing ? "Product updated successfully." : "Product created successfully.");
 
@@ -489,6 +548,7 @@ export default function AdminProducts() {
     setSuccess("");
     setGallery([]);
     setGalleryFiles([]);
+    setVariantFiles({});
     setOpen(true);
   }
 
@@ -598,7 +658,7 @@ const giftForOptions = Array.from(
                         <h2 className="truncate font-black text-[#2f241e]">{p.name}</h2>
                         <p className="mt-1 truncate text-sm text-black/45">{p.category || "Uncategorized"}</p>
                       </div>
-                      <p className="shrink-0 text-lg font-black text-[#5d3b2a]">${Number(p.price).toFixed(2)}</p>
+                      <p className="shrink-0 text-lg font-black text-[#5d3b2a]">{formatAUD(p.price)}</p>
                     </div>
 
                     <div className="mt-5 flex items-center justify-between gap-3 border-t border-[#eadfce] pt-4">
@@ -707,6 +767,70 @@ const giftForOptions = Array.from(
                   className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
                 />
               </label>
+              <label className="text-sm font-bold">
+                Stock status
+                <select value={form.stock_status || "In stock"} onChange={(e) => setForm({ ...form, stock_status: e.target.value as "In stock" | "Out of stock" })} className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3">
+                  <option>In stock</option>
+                  <option>Out of stock</option>
+                </select>
+              </label>
+              <div className="sm:col-span-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold">Sizes / designs</span>
+                  <button type="button" onClick={() => setForm({ ...form, variants: [...(form.variants || []), { id: crypto.randomUUID(), product_id: editing || "", name: "", length: null, width: null, height: null, weight: null, price: Number(form.price) || 0, stock: 0 }] })} className="rounded-lg border px-3 py-2 text-xs font-bold">Add option</button>
+                </div>
+                <div className="mt-3 grid gap-3">
+                  {(form.variants || []).map((variant, index) => (
+                    <div key={variant.id || index} className="rounded-xl border border-black/10 bg-white p-3">
+                      <div className="grid min-w-0 grid-cols-3 gap-3">
+                        <label className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
+                          Size / Design Name
+                          <input aria-label={`Option ${index + 1} name`} value={variant.name} onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, name: e.target.value } : item) })} className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]" />
+                        </label>
+                        {([
+                          ["length", "L / Length", "any"],
+                          ["width", "W / Width", "any"],
+                          ["height", "H / Height", "any"],
+                          ["weight", "Weight (optional)", "any"],
+                        ] as const).map(([field, label, step]) => (
+                          <label key={field} className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
+                            {label}
+                            <input
+                              aria-label={`${label} for option ${index + 1}`}
+                              type="number"
+                              min="0"
+                              step={step}
+                              value={numericInputValue(variant[field])}
+                              onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, [field]: e.target.value === "" ? null : Number(e.target.value) } : item) })}
+                              className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]"
+                            />
+                          </label>
+                        ))}
+                        <label className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
+                          Price (AUD)
+                          <input aria-label={`Option ${index + 1} price`} type="number" min="0" step="0.01" value={numericInputValue(variant.price)} onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, price: e.target.value === "" ? Number.NaN : Number(e.target.value) } : item) })} className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]" />
+                        </label>
+                        <label className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
+                          Stock / Quantity
+                          <input aria-label={`Option ${index + 1} stock`} type="number" min="0" step="1" value={numericInputValue(variant.stock)} onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, stock: e.target.value === "" ? Number.NaN : Number(e.target.value) } : item) })} className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]" />
+                        </label>
+                        <button type="button" onClick={() => { if (window.confirm(`Remove ${variant.name || `option ${index + 1}`}? This will remove its gallery assignment when saved.`)) setForm({ ...form, variants: (form.variants || []).filter((_, itemIndex) => itemIndex !== index) }); }} className="rounded-lg p-2 text-red-700" aria-label={`Remove option ${index + 1}`}><Trash2 size={16} /></button>
+                      </div>
+                      {variant.id && editing && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                          <label className="cursor-pointer rounded-lg border border-[#0b4166]/20 bg-[#f6f0e7] px-3 py-2 font-bold text-[#0b4166]">
+                            Add option gallery
+                            <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => { const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/")); setVariantFiles((current) => ({ ...current, [variant.id]: [...(current[variant.id] || []), ...files] })); event.target.value = ""; }} />
+                          </label>
+                          {gallery.length > 0 && <button type="button" onClick={() => assignExistingGallery(variant.id)} className="rounded-lg border px-3 py-2 font-bold">Assign existing product images</button>}
+                          {(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.length ? <span className="text-black/50">{(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.length} assigned images</span> : null}
+                          {variantFiles[variant.id]?.length ? <span className="text-[#2479a8]">{variantFiles[variant.id].length} pending upload</span> : null}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               <label className="text-sm font-bold">
                 Image URL
@@ -911,4 +1035,3 @@ const giftForOptions = Array.from(
     </div>
   );
 }   
-

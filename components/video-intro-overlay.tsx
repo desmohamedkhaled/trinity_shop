@@ -147,6 +147,15 @@ export function VideoIntroOverlay() {
     }, 420);
   }, [show, unlockBodyScroll]);
 
+  useEffect(() => {
+    if (!show) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") finishIntro();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [finishIntro, show]);
+
   if (isAdminRoute || !show) {
     return null;
   }
@@ -179,6 +188,9 @@ export function VideoIntroOverlay() {
       )}
 
       {hasError && <span className="video-intro-error" aria-live="polite">Video unavailable</span>}
+      <button type="button" className="video-intro-skip" onClick={finishIntro} aria-label="Skip introduction">
+        Skip introduction
+      </button>
     </div>
   );
 }

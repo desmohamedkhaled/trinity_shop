@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "node smoke-test.mjs",
-    "test:qa": "node tests/qa-http-smoke.mjs"
+    "test:qa": "node tests/qa-http-smoke.mjs",
+    "test:variants": "node tests/variant-invariants.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

@@ -69,19 +69,19 @@ on conflict do nothing;
 
 -- Question 3: What is your budget?
 insert into public.gift_options(question_id,label,value) 
-select id,'Under 500 EGP','Under 500' from public.gift_questions where question='What is your budget?' limit 1
+select id,'Under 500 AUD','Under 500' from public.gift_questions where question='What is your budget?' limit 1
 on conflict do nothing;
 
 insert into public.gift_options(question_id,label,value) 
-select id,'500–1,000 EGP','500–1,000' from public.gift_questions where question='What is your budget?' limit 1
+select id,'500–1,000 AUD','500–1,000' from public.gift_questions where question='What is your budget?' limit 1
 on conflict do nothing;
 
 insert into public.gift_options(question_id,label,value) 
-select id,'1,000–2,000 EGP','1,000–2,000' from public.gift_questions where question='What is your budget?' limit 1
+select id,'1,000–2,000 AUD','1,000–2,000' from public.gift_questions where question='What is your budget?' limit 1
 on conflict do nothing;
 
 insert into public.gift_options(question_id,label,value) 
-select id,'2,000+ EGP','2,000+' from public.gift_questions where question='What is your budget?' limit 1
+select id,'2,000+ AUD','2,000+' from public.gift_questions where question='What is your budget?' limit 1
 on conflict do nothing;
 
 -- Question 4: What kind of gift are you looking for?

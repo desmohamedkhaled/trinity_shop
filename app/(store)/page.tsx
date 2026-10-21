@@ -164,7 +164,7 @@ export default async function Home() {
 
             <Link
               href="/gift-finder"
-              className="mt-8 inline-block rounded-full bg-[#f6f0e7] px-7 py-4 text-sm font-bold text-[#5d3b2a] transition hover:-translate-y-1 hover:bg-white"
+              className="mt-8 inline-block rounded-full bg-[#f6f0e7] px-7 py-4 text-sm font-bold text-[#5d3b2a] transition hover:-translate-y-1 hover:bg-white hover:text-[#5d3b2a]"
             >
               Start Gift Finder
             </Link>

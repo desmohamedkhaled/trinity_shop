@@ -17,6 +17,8 @@ export type Product = {
   featured?: boolean;
   stock?: number;
   gallery?: ProductImage[];
+  stock_status?: "In stock" | "Out of stock";
+  variants?: ProductVariant[];
 };
 
 export type ProductShippingLocation = {
@@ -33,6 +35,19 @@ export type ProductImage = {
   image_url: string;
   alt_text?: string | null;
   sort_order: number;
+};
+
+export type ProductVariant = {
+  id: string;
+  product_id: string;
+  name: string;
+  price: number;
+  stock: number;
+  length?: number | null;
+  width?: number | null;
+  height?: number | null;
+  weight?: number | null;
+  images?: ProductImage[];
 };
 
 export type Occasion = {
