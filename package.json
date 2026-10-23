@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "test": "node smoke-test.mjs",
     "test:qa": "node tests/qa-http-smoke.mjs",
-    "test:variants": "node tests/variant-invariants.mjs"
+    "test:variants": "node tests/variant-invariants.mjs",
     "build:turbo": "next build"
   },
   "dependencies": {
