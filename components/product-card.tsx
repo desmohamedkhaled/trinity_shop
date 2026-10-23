@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
 import type { Product } from "@/lib/data";
+import { formatAUD } from "@/lib/currency";
 import { useStore } from "./store-provider";
 import { AddToCartButton } from "./add-to-cart-button";
 import { IconButton } from "@/components/icon-button";
@@ -92,6 +93,16 @@ export function ProductCard({ product }: { product: Product }) {
             Featured
           </span>
         )}
+        {(product.category === "Coming Soon" || product.occasion?.includes("Coming Soon")) && (
+          <span className="absolute left-4 top-14 rounded-full bg-[#b48d55]/95 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white">
+            Coming Soon
+          </span>
+        )}
+        {product.stock_status === "Out of stock" && (
+          <span className="absolute bottom-4 left-4 rounded-full bg-black/70 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white">
+            Out of stock
+          </span>
+        )}
 
         <div className="absolute right-3 top-1/2 flex -translate-y-1/2 translate-x-0 flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/90 opacity-100 shadow-xl backdrop-blur-md transition-all duration-300 md:translate-x-2 md:opacity-0 md:group-hover:translate-x-0 md:group-hover:opacity-100 md:focus-within:translate-x-0 md:focus-within:opacity-100">
           <Link
@@ -151,12 +162,18 @@ export function ProductCard({ product }: { product: Product }) {
         </div>
 
         <span className="pt-1 text-base font-bold text-[#5d3b2a]">
-          ${product.price}
+          {formatAUD(product.price)}
         </span>
       </div>
 
       <div className="mt-4 px-1">
-        <AddToCartButton product={product} compact />
+        {product.variants?.length ? (
+          <Link href={`/products/${product.slug}`} className="trinity-button trinity-button-primary inline-flex min-h-10 items-center justify-center px-3 text-xs">
+            Choose options
+          </Link>
+        ) : (
+          <AddToCartButton product={product} compact />
+        )}
       </div>
 
       {zoomOpen && (

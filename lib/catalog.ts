@@ -31,13 +31,31 @@ export async function getProducts(): Promise<Product[]> {
       return [];
     }
 
+    let variantsByProduct = new Map<string, any[]>();
+    const { data: variantRows, error: variantError } = await supabase
+      .from("product_variants")
+      .select("id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order)")
+      .order("sort_order", { ascending: true });
+    if (!variantError) {
+      variantsByProduct = new Map<string, any[]>();
+      for (const variant of variantRows ?? []) {
+        const list = variantsByProduct.get(variant.product_id) ?? [];
+        list.push({ ...variant, images: variant.product_variant_images ?? [] });
+        variantsByProduct.set(variant.product_id, list);
+      }
+    } else if (!["42P01", "PGRST200", "PGRST205"].includes(variantError.code || "")) {
+      console.error("Failed to load product variants:", variantError);
+    }
+
     return (data ?? []).map((p: any) => ({
       ...p,
       image: p.image_url || p.image || "",
       featured: Boolean(p.is_featured),
+      stock_status: p.stock_status === "Out of stock" ? "Out of stock" : "In stock",
       occasion: Array.isArray(p.occasion) ? p.occasion : [],
       giftFor: Array.isArray(p.gift_for) ? p.gift_for : [],
       gallery: [],
+      variants: variantsByProduct.get(p.id) ?? [],
     }));
   }
 
@@ -90,6 +108,18 @@ export async function getProduct(slug: string): Promise<Product | null> {
       console.error("Failed to load product gallery:", galleryError);
     }
 
+    let variants: any[] = [];
+    const { data: variantRows, error: variantError } = await supabase
+      .from("product_variants")
+      .select("id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order)")
+      .eq("product_id", product.id)
+      .order("sort_order", { ascending: true });
+    if (!variantError) {
+      variants = (variantRows ?? []).map((variant: any) => ({ ...variant, images: variant.product_variant_images ?? [] }));
+    } else if (!["42P01", "PGRST200", "PGRST205"].includes(variantError.code || "")) {
+      console.error("Failed to load product variants:", variantError);
+    }
+
     return {
       ...product,
       image: product.image_url || product.image || "",
@@ -97,6 +127,7 @@ export async function getProduct(slug: string): Promise<Product | null> {
       occasion: Array.isArray(product.occasion) ? product.occasion : [],
       giftFor: Array.isArray(product.gift_for) ? product.gift_for : [],
       gallery: gallery ?? [],
+      variants,
     };
   }
 

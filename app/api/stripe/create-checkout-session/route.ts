@@ -12,17 +12,19 @@ type Customer = {
   address?: string;
 };
 
-type Item = { id?: string; quantity?: number };
+type Item = { id?: string; variant_id?: string; quantity?: number };
 
 function normalizeItems(items: Item[]) {
-  const merged = new Map<string, number>();
+  const merged = new Map<string, { id: string; variant_id?: string; quantity: number }>();
   for (const item of items) {
     const id = typeof item.id === "string" ? item.id.trim() : "";
     const quantity = Number(item.quantity);
     if (!id || !Number.isInteger(quantity) || quantity < 1 || quantity > 99) return null;
-    merged.set(id, (merged.get(id) || 0) + quantity);
+    const key = `${id}:${item.variant_id || ""}`;
+    const current = merged.get(key);
+    merged.set(key, { id, variant_id: item.variant_id, quantity: (current?.quantity || 0) + quantity });
   }
-  return Array.from(merged, ([id, quantity]) => ({ id, quantity })).sort((left, right) => left.id.localeCompare(right.id));
+  return Array.from(merged.values()).sort((left, right) => left.id.localeCompare(right.id));
 }
 
 export async function POST(request: Request) {
@@ -75,7 +77,7 @@ export async function POST(request: Request) {
   const origin = (process.env.NEXT_PUBLIC_SITE_URL || request.headers.get("origin") || "http://localhost:3000").replace(/\/$/, "");
   const lineItems = reservation.items.map((item) => ({
     price_data: {
-      currency: String(order.currency || "USD").toLowerCase(),
+      currency: String(order.currency || "AUD").toLowerCase(),
       unit_amount: Math.round(Number(item.unit_price) * 100),
       product_data: {
         name: String(item.product_name),

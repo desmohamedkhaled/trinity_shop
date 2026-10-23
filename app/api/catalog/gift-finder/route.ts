@@ -14,5 +14,12 @@ export async function GET() {
     .order("sort_order", { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data ?? []);
+  const normalized = (data ?? []).map((question) => ({
+    ...question,
+    gift_options: question.gift_options?.map((option) => ({
+      ...option,
+      label: option.label.replace(/\bEGP\b/g, "AUD"),
+    })),
+  }));
+  return NextResponse.json(normalized);
 }

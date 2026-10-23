@@ -78,8 +78,23 @@ flowchart TD
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY` (server-only; never expose this in client code)
+   - `STRIPE_SECRET_KEY` (DEV must use a Stripe Test secret key)
+   - `STRIPE_WEBHOOK_SECRET` (must belong to the matching DEV/Test webhook endpoint)
+   - `NEXT_PUBLIC_SITE_URL` (DEV: `https://dev.trinitychristiangiftshop.com.au`)
 7. Run `npm install` then `npm run dev`.
 8. Open `/admin/login` and configure Admin → Settings → WhatsApp checkout.
+
+## Stripe DEV setup
+
+The Stripe webhook endpoint for DEV is:
+
+`https://dev.trinitychristiangiftshop.com.au/api/stripe/webhook`
+
+Before enabling Stripe checkout in DEV, apply the additive migration
+`supabase/migrations/20261013000000_stripe_webhook_events.sql` to the DEV
+Supabase project only. Configure the endpoint in Stripe Test Mode and use its
+signing secret as `STRIPE_WEBHOOK_SECRET`. Do not use Test credentials in
+production or Live credentials in local development.
 
 ## WhatsApp behavior
 When **WhatsApp checkout is ON** and a business number is configured, the customer fills in their details and is redirected to WhatsApp with a prefilled message containing:

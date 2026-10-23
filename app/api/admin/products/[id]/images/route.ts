@@ -7,6 +7,8 @@ type GalleryMetadata = {
   clientId: string;
 };
 
+type VariantGalleryMetadata = GalleryMetadata & { variantId: string };
+
 type GalleryResult = {
   fileName: string;
   success: boolean;
@@ -70,6 +72,19 @@ export async function POST(
   }
 
   const formData = await req.formData();
+  const variantId = String(formData.get("variant_id") || "").trim();
+  let variant: { id: string; product_id: string } | null = null;
+  if (variantId) {
+    const { data, error } = await service
+      .from("product_variants")
+      .select("id, product_id")
+      .eq("id", variantId)
+      .eq("product_id", productId)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!data) return NextResponse.json({ error: "Variant not found for this product." }, { status: 404 });
+    variant = data;
+  }
 
   const files = formData
     .getAll("files")
@@ -138,7 +153,7 @@ export async function POST(
     const extension = getExtension(file.name, file.type);
 
     const storagePath =
-      `products/${productId}/gallery/` +
+      `products/${productId}/${variant ? `variants/${variant.id}/` : "gallery/"}` +
       `${item.stableIndex}-${item.clientId}.${extension}`;
 
     try {
@@ -150,12 +165,14 @@ export async function POST(
        * Check product_images first so a successful previous attempt
        * does not create another database row.
        */
-      const { data: existingImage, error: existingError } = await service
-        .from("product_images")
+      const imageTable = variant ? "product_variant_images" : "product_images";
+      const imageQuery = service
+        .from(imageTable)
         .select("id,image_url")
-        .eq("product_id", productId)
+        .eq(variant ? "variant_id" : "product_id", variant ? variant.id : productId)
         .eq("image_url", `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/trinity-media/${storagePath}`)
         .maybeSingle();
+      const { data: existingImage, error: existingError } = await imageQuery;
 
       if (existingError) {
         throw new Error(existingError.message);
@@ -191,9 +208,9 @@ export async function POST(
         .getPublicUrl(storagePath);
 
       const { data: imageRow, error: insertError } = await service
-        .from("product_images")
+        .from(imageTable)
         .insert({
-          product_id: productId,
+          ...(variant ? { variant_id: variant.id } : { product_id: productId }),
           image_url: publicUrl,
           sort_order: item.stableIndex,
           alt_text: file.name,
@@ -242,7 +259,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const access = await requirePermission("media.delete");
+  const access = await requirePermission("media.upload");
   if (access.response) return access.response;
   const { supabase } = access;
 
@@ -255,6 +272,36 @@ export async function PATCH(
       { error: "Invalid gallery order payload." },
       { status: 400 }
     );
+  }
+
+  if (typeof body.variantId === "string") {
+    const { data: variant, error: variantError } = await supabase
+      .from("product_variants")
+      .select("id")
+      .eq("id", body.variantId)
+      .eq("product_id", productId)
+      .maybeSingle();
+    if (variantError || !variant) return NextResponse.json({ error: variantError?.message || "Variant not found." }, { status: 400 });
+    const sourceIds = body.images.filter((image: { id?: unknown }) => typeof image.id === "string").map((image: { id: string }) => image.id);
+    if (sourceIds.length) {
+      const { data: sourceImages, error: sourceError } = await supabase
+        .from("product_images")
+        .select("id,image_url,alt_text,sort_order")
+        .eq("product_id", productId)
+        .in("id", sourceIds);
+      if (sourceError) return NextResponse.json({ error: sourceError.message }, { status: 400 });
+      const { error: copyError } = await supabase.from("product_variant_images").upsert(
+        (sourceImages ?? []).map((image, index) => ({
+          variant_id: body.variantId,
+          image_url: image.image_url,
+          alt_text: image.alt_text,
+          sort_order: index,
+        })),
+        { onConflict: "variant_id,image_url" },
+      );
+      if (copyError) return NextResponse.json({ error: copyError.message }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
   }
 
   for (let index = 0; index < body.images.length; index += 1) {
