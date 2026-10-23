@@ -11,6 +11,7 @@
     "test": "node smoke-test.mjs",
     "test:qa": "node tests/qa-http-smoke.mjs",
     "test:variants": "node tests/variant-invariants.mjs"
+    "build:turbo": "next build"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
@@ -36,5 +37,8 @@
     "supabase": "^2.119.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }
