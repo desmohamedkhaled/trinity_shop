@@ -188,9 +188,6 @@ export function VideoIntroOverlay() {
       )}
 
       {hasError && <span className="video-intro-error" aria-live="polite">Video unavailable</span>}
-      <button type="button" className="video-intro-skip" onClick={finishIntro} aria-label="Skip introduction">
-        Skip introduction
-      </button>
     </div>
   );
 }
