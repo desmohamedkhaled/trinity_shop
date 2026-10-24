@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Sparkles } from "lucide-react";
-import type { Product, ProductVariant } from "@/lib/data";
+import { isComingSoonProduct, type Product, type ProductVariant } from "@/lib/data";
 import { formatAUD } from "@/lib/currency";
 import { ProductActions } from "@/components/product-actions";
 import { ProductGallery } from "@/components/product-gallery";
@@ -23,7 +23,7 @@ export function ProductDetail({ product }: { product: Product }) {
   const allDepleted = product.variants?.length
     ? product.variants.every((item) => item.stock <= 0)
     : (product.stock ?? 0) <= 0;
-  const comingSoon = product.category === "Coming Soon" || product.occasion?.includes("Coming Soon");
+  const comingSoon = isComingSoonProduct(product);
   const dimensions = [
     ["Length", valueWithUnit(displayProduct.length, "cm")],
     ["Width", valueWithUnit(displayProduct.width, "cm")],

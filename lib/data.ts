@@ -21,6 +21,10 @@ export type Product = {
   variants?: ProductVariant[];
 };
 
+export function isComingSoonProduct(product: Pick<Product, "category" | "occasion">) {
+  return product.category === "Coming Soon" || product.occasion?.includes("Coming Soon") === true;
+}
+
 export type ProductShippingLocation = {
   id?: string;
   product_id?: string;

@@ -1,6 +1,6 @@
  "use client";
 import { createContext, useContext, useEffect, useState } from "react";
-import type { Product, ProductVariant } from "@/lib/data";
+import { isComingSoonProduct, type Product, type ProductVariant } from "@/lib/data";
 
 export type CartLine = { product: Product; variant?: ProductVariant };
 type StoreContextType = {
@@ -41,7 +41,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     const stored = readStoredValue<(Product | CartLine)[]>("trinity-cart", []);
-    setCart(stored.map((item) => "product" in item ? item as CartLine : { product: item as Product }));
+    setCart(stored.map((item) => "product" in item ? item as CartLine : { product: item as Product }).filter((item) => !isComingSoonProduct(item.product)));
     setCartQuantities(readStoredValue<Record<string, number>>("trinity-cart-quantities", {}));
     setGiftList(readStoredValue<Product[]>("trinity-gift-list", []));
     setQuantities(readStoredValue<Record<string, number>>("trinity-gift-quantities", {}));
@@ -57,6 +57,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const lineId = (p: Product, variant?: ProductVariant) => `${p.id}:${variant?.id || "default"}`;
   const addToCart = (p: Product, variant?: ProductVariant) => {
+    if (isComingSoonProduct(p)) return;
     const id = lineId(p, variant);
     setCart((items) => items.some((item) => lineId(item.product, item.variant) === id) ? items : [...items, { product: p, variant }]);
     setCartQuantities((items) => ({ ...items, [id]: items[id] || 1 }));

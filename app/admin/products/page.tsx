@@ -452,7 +452,11 @@ export default function AdminProducts() {
       price,
       stock,
       stock_status: form.stock_status || "In stock",
-      variants: form.variants || [],
+      variants: (form.variants || []).map(({ id, ...variant }) =>
+        (originalProduct?.product_variants || []).some((saved: ProductVariant) => saved.id === id)
+          ? { id, ...variant }
+          : variant
+      ),
       is_featured: Boolean(form.featured),
       is_published: form.is_published !== false,
       gift_for: form.giftFor || [],
@@ -494,8 +498,10 @@ export default function AdminProducts() {
 
       if (!statusOnlyUpdate && !(await uploadGallery(d.id))) return;
       const savedVariants = Array.isArray(d.product_variants) ? d.product_variants : (form.variants || []);
-      for (const variant of savedVariants) {
-        if (variantFiles[variant.id]?.length && !(await uploadVariantGallery(d.id, variant.id, variantFiles[variant.id]))) return;
+      for (const [index, variant] of savedVariants.entries()) {
+        const localVariant = (form.variants || [])[index];
+        const files = variantFiles[localVariant?.id || variant.id];
+        if (files?.length && !(await uploadVariantGallery(d.id, variant.id, files))) return;
       }
 
       console.info("[Gallery] Product save complete", { id: d.id });

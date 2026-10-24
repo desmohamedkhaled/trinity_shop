@@ -36,6 +36,8 @@ section("variant edits preserve retained IDs and galleries", () => {
   assert.match(adminProducts, /from\('product_variants'\)\.select\('id'\)/);
   assert.match(adminProducts, /upsert\(variant, \{ onConflict: 'id' \}\)/);
   assert.doesNotMatch(adminProducts, /product_variants'\)\.delete\(\)\.eq\('product_id', id\)/);
+  assert.match(adminProducts, /product_variants: savedVariants/);
+  assert.match(adminForm, /saved\.id === id/);
 });
 
 section("variant admin input is validated and scoped", () => {

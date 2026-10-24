@@ -132,7 +132,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (variantError) return NextResponse.json({ error: variantError.message }, { status: 400 });
     }
   }
-  return NextResponse.json(data);
+  const { data: savedVariants, error: savedVariantsError } = await supabase
+    .from('product_variants')
+    .select('id, product_id, name, price, stock, length, width, height, weight, sort_order')
+    .eq('product_id', id)
+    .order('sort_order');
+  if (savedVariantsError) return NextResponse.json({ error: savedVariantsError.message }, { status: 400 });
+  return NextResponse.json({ ...data, product_variants: savedVariants ?? [] });
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
