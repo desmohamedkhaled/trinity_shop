@@ -542,6 +542,15 @@ main {
   white-space: nowrap;
 }
 
+.shop-category-scroll {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shop-category-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 /* =========================================================
    INTRO ACCESSIBILITY
    ========================================================= */
