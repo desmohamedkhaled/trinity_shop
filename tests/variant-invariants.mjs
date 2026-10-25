@@ -6,6 +6,10 @@ const adminProducts = await readFile(new URL("../app/api/admin/products/[id]/rou
 const adminProductsCreate = await readFile(new URL("../app/api/admin/products/route.ts", import.meta.url), "utf8");
 const adminForm = await readFile(new URL("../app/admin/products/page.tsx", import.meta.url), "utf8");
 const productCard = await readFile(new URL("../components/product-card.tsx", import.meta.url), "utf8");
+const imageAvailabilityMigration = await readFile(new URL("../supabase/migrations/20261025000000_product_variant_image_availability.sql", import.meta.url), "utf8");
+const imageRoute = await readFile(new URL("../app/api/admin/products/[id]/images/route.ts", import.meta.url), "utf8");
+const catalog = await readFile(new URL("../lib/catalog.ts", import.meta.url), "utf8");
+const productDetail = await readFile(new URL("../components/product-detail.tsx", import.meta.url), "utf8");
 
 function section(name, callback) {
   callback();
@@ -58,6 +62,42 @@ section("admin variant form exposes the mapped fields", () => {
 section("product cards require option selection for variant products", () => {
   assert.match(productCard, /product\.variants\?\.length/);
   assert.match(productCard, /Choose options/);
+});
+
+section("image availability has its own non-negative per-image field", () => {
+  assert.match(imageAvailabilityMigration, /add column if not exists available_quantity integer not null default 0/);
+  assert.match(imageAvailabilityMigration, /check \(available_quantity >= 0\)/);
+  assert.doesNotMatch(migration, /available_quantity/);
+});
+
+section("existing gallery images are assigned by URL without storage uploads", () => {
+  assert.match(imageRoute, /from\("product_images"\)/);
+  assert.match(imageRoute, /from\("product_variant_images"\)\.upsert/);
+  assert.match(imageRoute, /onConflict: "variant_id,image_url"/);
+  assert.match(imageRoute, /not in this product's shared gallery/);
+});
+
+section("assigned image quantities are validated and returned on reload", () => {
+  assert.match(imageRoute, /Number\.isInteger\(item\.available_quantity\)/);
+  assert.match(imageRoute, /One or more assigned images do not belong to this option/);
+  assert.match(imageRoute, /select\("id, variant_id, image_url, alt_text, sort_order, available_quantity"\)/);
+  assert.match(adminForm, /Save image availability/);
+  assert.match(adminForm, /image\.image_url/);
+});
+
+section("storefront filters option galleries by positive image availability", () => {
+  assert.match(catalog, /product_variant_images\(id, variant_id, image_url, alt_text, sort_order, available_quantity\)/);
+  assert.match(productDetail, /image\.available_quantity \?\? 0\) > 0/);
+  assert.match(productDetail, /image: optionImages\[0\]\?\.image_url \?\? ""/);
+});
+
+section("specification values use variant fields and compact vector icons", () => {
+  for (const field of ["length", "width", "height", "weight"]) {
+    assert.match(productDetail, new RegExp(`displayProduct\\.${field}`));
+  }
+  assert.match(productDetail, /sm:grid-cols-4/);
+  assert.match(productDetail, /type === "weight"/);
+  assert.match(productDetail, /KG/);
 });
 
 console.log("BLOCKED runtime checks: concurrent final-unit purchase and exactly-once DB transitions require the unapplied DEV migration and an isolated disposable database.");

@@ -35,10 +35,12 @@ export type ProductShippingLocation = {
 
 export type ProductImage = {
   id: string;
-  product_id: string;
+  product_id?: string;
+  variant_id?: string;
   image_url: string;
   alt_text?: string | null;
   sort_order: number;
+  available_quantity?: number;
 };
 
 export type ProductVariant = {

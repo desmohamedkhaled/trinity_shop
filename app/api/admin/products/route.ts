@@ -3,6 +3,10 @@ import { requirePermission } from '@/lib/admin';
 
 const shippingStates = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'] as const;
 
+function missingAvailabilityColumn(error: { code?: string; message?: string } | null) {
+  return error?.code === '42703' || error?.code === 'PGRST204' || error?.message?.includes('available_quantity');
+}
+
 function shippingLocations(value: unknown, productId: string) {
   if (!Array.isArray(value)) return null;
 
@@ -68,7 +72,26 @@ export async function GET() {
   if (access.response) return access.response;
   const { supabase } = access;
 
-  let { data, error } = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_shipping_locations(id, product_id, state, suburb, metro), product_variants(id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order))').order('created_at', { ascending: false });
+  let { data, error } = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_shipping_locations(id, product_id, state, suburb, metro), product_variants(id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order, available_quantity))').order('created_at', { ascending: false });
+  if (missingAvailabilityColumn(error)) {
+    const legacy = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_shipping_locations(id, product_id, state, suburb, metro), product_variants(id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order))').order('created_at', { ascending: false });
+    data = legacy.data?.map((product: Record<string, unknown>) => {
+      const variants = product.product_variants;
+      return {
+        ...product,
+        product_variants: Array.isArray(variants) ? variants.map((variant: Record<string, unknown>) => {
+          const images = variant.product_variant_images;
+          return {
+            ...variant,
+            product_variant_images: Array.isArray(images)
+              ? images.map((image: Record<string, unknown>) => ({ ...image, available_quantity: 0 }))
+              : images,
+          };
+        }) : variants,
+      };
+    }) ?? null;
+    error = legacy.error;
+  }
   if (error?.code === 'PGRST200') {
     const fallback = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_shipping_locations(id, product_id, state, suburb, metro)').order('created_at', { ascending: false });
     data = fallback.data;

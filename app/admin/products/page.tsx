@@ -163,6 +163,7 @@ export default function AdminProducts() {
   const [gallery, setGallery] = useState<ProductImage[]>([]);
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const [variantFiles, setVariantFiles] = useState<Record<string, File[]>>({});
+  const [savingVariantImages, setSavingVariantImages] = useState(false);
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState({ uploaded: 0, total: 0 });
   const [originalProduct, setOriginalProduct] = useState<any | null>(null);
@@ -358,14 +359,67 @@ export default function AdminProducts() {
 
   async function assignExistingGallery(variantId: string) {
     if (!editing) return;
-    const response = await fetch(`/api/admin/products/${editing}/images`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ variantId, images: gallery }),
-    });
-    const data = await response.json();
-    if (!response.ok) setError(data.error || "Could not assign existing images to this option.");
-    else setSuccess("Existing product images assigned to the selected option.");
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/products/${editing}/images`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variantId, images: gallery }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || "Could not assign existing images to this option.");
+        return;
+      }
+      setForm((current) => ({
+        ...current,
+        variants: (current.variants || []).map((variant) =>
+          variant.id === variantId ? { ...variant, images: data.assignments || [] } : variant
+        ),
+      }));
+      setSuccess("Existing product images assigned to the selected option. Set their availability and save.");
+    } catch (error) {
+      console.error("[Gallery] Existing image assignment failed", error);
+      setError("Could not assign existing images. Check your connection and try again.");
+    }
+  }
+
+  async function saveVariantImageAvailability(variant: ProductVariant) {
+    if (!editing || !variant.id || savingVariantImages) return;
+    const assignments = variant.images || [];
+    if (assignments.some((image) => !Number.isInteger(image.available_quantity) || (image.available_quantity ?? -1) < 0)) {
+      setError(`Image availability for ${variant.name} must use non-negative whole numbers.`);
+      return;
+    }
+    setError("");
+    setSavingVariantImages(true);
+    try {
+      const response = await fetch(`/api/admin/products/${editing}/images`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          variantId: variant.id,
+          assignments: assignments.map(({ id, available_quantity }) => ({ id, available_quantity })),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || "Could not save assigned image availability.");
+        return;
+      }
+      setForm((current) => ({
+        ...current,
+        variants: (current.variants || []).map((item) =>
+          item.id === variant.id ? { ...item, images: data.assignments || [] } : item
+        ),
+      }));
+      setSuccess(`Image availability saved for ${variant.name}.`);
+    } catch (error) {
+      console.error("[Gallery] Image availability save failed", error);
+      setError("Could not save image availability. Check your connection and try again.");
+    } finally {
+      setSavingVariantImages(false);
+    }
   }
 
   async function deleteGalleryImage(image: ProductImage) {
@@ -788,7 +842,7 @@ const giftForOptions = Array.from(
                 <div className="mt-3 grid gap-3">
                   {(form.variants || []).map((variant, index) => (
                     <div key={variant.id || index} className="rounded-xl border border-black/10 bg-white p-3">
-                      <div className="grid min-w-0 grid-cols-3 gap-3">
+                      <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3">
                         <label className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
                           Size / Design Name
                           <input aria-label={`Option ${index + 1} name`} value={variant.name} onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, name: e.target.value } : item) })} className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]" />
@@ -829,8 +883,64 @@ const giftForOptions = Array.from(
                             <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => { const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/")); setVariantFiles((current) => ({ ...current, [variant.id]: [...(current[variant.id] || []), ...files] })); event.target.value = ""; }} />
                           </label>
                           {gallery.length > 0 && <button type="button" onClick={() => assignExistingGallery(variant.id)} className="rounded-lg border px-3 py-2 font-bold">Assign existing product images</button>}
-                          {(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.length ? <span className="text-black/50">{(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.length} assigned images</span> : null}
                           {variantFiles[variant.id]?.length ? <span className="text-[#2479a8]">{variantFiles[variant.id].length} pending upload</span> : null}
+                        </div>
+                      )}
+                      {variant.id && editing && (
+                        <div className="mt-3 rounded-lg bg-[#faf8f4] p-3">
+                          <p className="text-xs font-bold text-[#0b4166]">Assigned option images and available quantity</p>
+                          <p className="mt-1 text-xs text-black/55">Image availability is separate from this option&apos;s stock quantity.</p>
+                          {variant.images?.length ? (
+                            <>
+                              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                                {variant.images.map((image, imageIndex) => (
+                                  <div key={image.id} className="min-w-0 rounded-lg border border-black/10 bg-white p-2">
+                                    <div className="relative aspect-square overflow-hidden rounded-md bg-black/5">
+                                      <Image
+                                        src={image.image_url}
+                                        alt={image.alt_text || `${variant.name} image ${imageIndex + 1}`}
+                                        fill
+                                        sizes="(max-width: 639px) 45vw, (max-width: 767px) 30vw, 20vw"
+                                        className="object-cover"
+                                      />
+                                    </div>
+                                    <label className="mt-2 block text-xs font-bold leading-tight text-[#0b4166]">
+                                      Available quantity
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        aria-label={`Available quantity for image ${imageIndex + 1} in ${variant.name}`}
+                                        value={numericInputValue(image.available_quantity)}
+                                        onChange={(event) => setForm((current) => ({
+                                          ...current,
+                                          variants: (current.variants || []).map((item) => item.id === variant.id
+                                            ? {
+                                              ...item,
+                                              images: (item.images || []).map((assigned) => assigned.id === image.id
+                                                ? { ...assigned, available_quantity: event.target.value === "" ? Number.NaN : Number(event.target.value) }
+                                                : assigned),
+                                            }
+                                            : item),
+                                        }))}
+                                        className="mt-1 min-h-10 w-full rounded-lg border border-black/10 p-2 text-sm text-[#1d2930]"
+                                      />
+                                    </label>
+                                  </div>
+                                ))}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => saveVariantImageAvailability(variant)}
+                                disabled={savingVariantImages}
+                                className="mt-3 rounded-lg border border-[#0b4166]/20 px-3 py-2 text-xs font-bold text-[#0b4166] disabled:opacity-50"
+                              >
+                                {savingVariantImages ? "Saving image availability..." : "Save image availability"}
+                              </button>
+                            </>
+                          ) : (
+                            <p className="mt-2 text-xs text-black/55">No images are assigned to this option yet. Assign shared gallery images or upload option-specific images.</p>
+                          )}
                         </div>
                       )}
                     </div>

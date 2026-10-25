@@ -14,6 +14,22 @@ type Customer = {
 
 type Item = { id?: string; variant_id?: string; quantity?: number };
 
+function isStockConflict(message: string) {
+  return [
+    "Product is unavailable",
+    "Selected option is no longer available",
+    "Only ",
+  ].some((stockMessage) => message.includes(stockMessage));
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return "";
+}
+
 function normalizeItems(items: Item[]) {
   const merged = new Map<string, { id: string; variant_id?: string; quantity: number }>();
   for (const item of items) {
@@ -64,11 +80,16 @@ export async function POST(request: Request) {
       customer: customerPayload,
       items,
     });
-    if (error || !data?.order) throw new Error(error?.message || "Unable to reserve the order stock.");
+    if (error) throw error;
+    if (!data?.order) throw new Error("Stock reservation did not return an order.");
     reservation = data as typeof reservation;
   } catch (error) {
     console.error("Atomic Stripe stock reservation failed", error);
-    return NextResponse.json({ error: "Some products are no longer available. Please refresh your cart." }, { status: 409 });
+    const message = getErrorMessage(error);
+    if (isStockConflict(message)) {
+      return NextResponse.json({ error: "Some products are no longer available. Please refresh your cart." }, { status: 409 });
+    }
+    return NextResponse.json({ error: "We couldn't verify stock for this checkout. Please try again, or contact us if the problem continues." }, { status: 500 });
   }
 
   const order = reservation.order;

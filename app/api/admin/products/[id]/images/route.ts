@@ -16,6 +16,12 @@ type GalleryResult = {
   error?: string;
 };
 
+function galleryErrorMessage(error: { code?: string; message: string }) {
+  return error.message.includes("available_quantity")
+    ? "The local image availability migration is not applied. Apply it to this DEV database only after approval before saving image assignments or quantities."
+    : error.message;
+}
+
 function getExtension(fileName: string, contentType: string) {
   const fromName = fileName.split(".").pop()?.toLowerCase();
 
@@ -265,13 +271,11 @@ export async function PATCH(
 
   const { id: productId } = await params;
 
-  const body = await req.json();
-
-  if (!Array.isArray(body.images)) {
-    return NextResponse.json(
-      { error: "Invalid gallery order payload." },
-      { status: 400 }
-    );
+  let body: { variantId?: unknown; images?: unknown; assignments?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid gallery payload." }, { status: 400 });
   }
 
   if (typeof body.variantId === "string") {
@@ -282,7 +286,60 @@ export async function PATCH(
       .eq("product_id", productId)
       .maybeSingle();
     if (variantError || !variant) return NextResponse.json({ error: variantError?.message || "Variant not found." }, { status: 400 });
-    const sourceIds = body.images.filter((image: { id?: unknown }) => typeof image.id === "string").map((image: { id: string }) => image.id);
+
+    if (Array.isArray(body.assignments)) {
+      const assignments = body.assignments;
+      if (assignments.some((item) =>
+        !item ||
+        typeof item !== "object" ||
+        typeof item.id !== "string" ||
+        !Number.isInteger(item.available_quantity) ||
+        item.available_quantity < 0
+      )) {
+        return NextResponse.json({ error: "Each assigned image needs a non-negative integer availability quantity." }, { status: 400 });
+      }
+      const assignmentIds = assignments.map((item) => item.id);
+      if (new Set(assignmentIds).size !== assignmentIds.length) {
+        return NextResponse.json({ error: "Assigned image IDs must be unique." }, { status: 400 });
+      }
+      if (assignmentIds.length) {
+        const { data: existingAssignments, error: assignmentError } = await supabase
+          .from("product_variant_images")
+          .select("id, variant_id, image_url, alt_text, sort_order")
+          .eq("variant_id", body.variantId)
+          .in("id", assignmentIds);
+        if (assignmentError) return NextResponse.json({ error: galleryErrorMessage(assignmentError) }, { status: 400 });
+        if ((existingAssignments ?? []).length !== assignmentIds.length) {
+          return NextResponse.json({ error: "One or more assigned images do not belong to this option." }, { status: 400 });
+        }
+        const assignmentsById = new Map((existingAssignments ?? []).map((item) => [item.id, item]));
+        const { error: updateError } = await supabase
+          .from("product_variant_images")
+          .upsert(assignments.map((item) => ({
+            ...assignmentsById.get(item.id),
+            available_quantity: item.available_quantity,
+          })), { onConflict: "id" });
+        if (updateError) return NextResponse.json({ error: galleryErrorMessage(updateError) }, { status: 400 });
+      }
+      const { data: savedAssignments, error: savedError } = await supabase
+        .from("product_variant_images")
+        .select("id, variant_id, image_url, alt_text, sort_order, available_quantity")
+        .eq("variant_id", body.variantId)
+        .order("sort_order");
+      if (savedError) return NextResponse.json({ error: galleryErrorMessage(savedError) }, { status: 400 });
+      return NextResponse.json({ ok: true, assignments: savedAssignments ?? [] });
+    }
+
+    if (!Array.isArray(body.images)) {
+      return NextResponse.json({ error: "Invalid existing-image assignment payload." }, { status: 400 });
+    }
+    if (body.images.some((image) => !image || typeof image !== "object" || typeof image.id !== "string")) {
+      return NextResponse.json({ error: "Each source gallery image must have a valid ID." }, { status: 400 });
+    }
+    const sourceIds = body.images.map((image) => image.id);
+    if (new Set(sourceIds).size !== sourceIds.length) {
+      return NextResponse.json({ error: "Source gallery image IDs must be unique." }, { status: 400 });
+    }
     if (sourceIds.length) {
       const { data: sourceImages, error: sourceError } = await supabase
         .from("product_images")
@@ -290,18 +347,41 @@ export async function PATCH(
         .eq("product_id", productId)
         .in("id", sourceIds);
       if (sourceError) return NextResponse.json({ error: sourceError.message }, { status: 400 });
+      if ((sourceImages ?? []).length !== sourceIds.length) {
+        return NextResponse.json({ error: "One or more images are not in this product's shared gallery." }, { status: 400 });
+      }
+      const { data: existingAssignments, error: existingError } = await supabase
+        .from("product_variant_images")
+        .select("image_url, available_quantity")
+        .eq("variant_id", body.variantId);
+      if (existingError) return NextResponse.json({ error: galleryErrorMessage(existingError) }, { status: 400 });
+      const quantitiesByUrl = new Map((existingAssignments ?? []).map((image) => [image.image_url, image.available_quantity]));
       const { error: copyError } = await supabase.from("product_variant_images").upsert(
         (sourceImages ?? []).map((image, index) => ({
           variant_id: body.variantId,
           image_url: image.image_url,
           alt_text: image.alt_text,
           sort_order: index,
+          available_quantity: quantitiesByUrl.get(image.image_url) ?? 0,
         })),
         { onConflict: "variant_id,image_url" },
       );
-      if (copyError) return NextResponse.json({ error: copyError.message }, { status: 400 });
+      if (copyError) return NextResponse.json({ error: galleryErrorMessage(copyError) }, { status: 400 });
     }
-    return NextResponse.json({ ok: true });
+    const { data: assignments, error: assignmentError } = await supabase
+      .from("product_variant_images")
+      .select("id, variant_id, image_url, alt_text, sort_order, available_quantity")
+      .eq("variant_id", body.variantId)
+      .order("sort_order");
+    if (assignmentError) return NextResponse.json({ error: galleryErrorMessage(assignmentError) }, { status: 400 });
+    return NextResponse.json({ ok: true, assignments: assignments ?? [] });
+  }
+
+  if (!Array.isArray(body.images)) {
+    return NextResponse.json(
+      { error: "Invalid gallery order payload." },
+      { status: 400 }
+    );
   }
 
   for (let index = 0; index < body.images.length; index += 1) {

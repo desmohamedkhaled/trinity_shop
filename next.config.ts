@@ -5,12 +5,13 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  // Pin the workspace root so Turbopack doesn't pick up a stray lockfile
-  // higher up the directory tree on the build machine.
   turbopack: {
     root: path.resolve(__dirname),
   },
   outputFileTracingRoot: path.resolve(__dirname),
+  experimental: {
+    cpus: 4,
+  },
 };
 
 export default nextConfig;

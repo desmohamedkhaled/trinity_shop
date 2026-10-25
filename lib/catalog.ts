@@ -7,6 +7,10 @@ export type CatalogResult<T> = {
   error?: string;
 };
 
+function missingAvailabilityColumn(error: { code?: string; message?: string } | null) {
+  return error?.code === "42703" || error?.code === "PGRST204" || error?.message?.includes("available_quantity");
+}
+
 export async function getProducts(): Promise<Product[]> {
     if (
       !process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -32,10 +36,21 @@ export async function getProducts(): Promise<Product[]> {
     }
 
     let variantsByProduct = new Map<string, any[]>();
-    const { data: variantRows, error: variantError } = await supabase
+    let { data: variantRows, error: variantError } = await supabase
       .from("product_variants")
-      .select("id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order)")
+      .select("id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order, available_quantity)")
       .order("sort_order", { ascending: true });
+    if (missingAvailabilityColumn(variantError)) {
+      const legacy = await supabase
+        .from("product_variants")
+        .select("id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order)")
+        .order("sort_order", { ascending: true });
+      variantRows = legacy.data?.map((variant) => ({
+        ...variant,
+        product_variant_images: variant.product_variant_images?.map((image) => ({ ...image, available_quantity: 0 })),
+      })) ?? null;
+      variantError = legacy.error;
+    }
     if (!variantError) {
       variantsByProduct = new Map<string, any[]>();
       for (const variant of variantRows ?? []) {
@@ -109,11 +124,23 @@ export async function getProduct(slug: string): Promise<Product | null> {
     }
 
     let variants: any[] = [];
-    const { data: variantRows, error: variantError } = await supabase
+    let { data: variantRows, error: variantError } = await supabase
       .from("product_variants")
-      .select("id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order)")
+      .select("id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order, available_quantity)")
       .eq("product_id", product.id)
       .order("sort_order", { ascending: true });
+    if (missingAvailabilityColumn(variantError)) {
+      const legacy = await supabase
+        .from("product_variants")
+        .select("id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order)")
+        .eq("product_id", product.id)
+        .order("sort_order", { ascending: true });
+      variantRows = legacy.data?.map((variant) => ({
+        ...variant,
+        product_variant_images: variant.product_variant_images?.map((image) => ({ ...image, available_quantity: 0 })),
+      })) ?? null;
+      variantError = legacy.error;
+    }
     if (!variantError) {
       variants = (variantRows ?? []).map((variant: any) => ({ ...variant, images: variant.product_variant_images ?? [] }));
     } else if (!["42P01", "PGRST200", "PGRST205"].includes(variantError.code || "")) {
