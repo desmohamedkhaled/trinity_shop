@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserSupabase } from "@/lib/supabase";
+import { useAdminAccess } from "@/components/admin-access";
 
 export default function AdminLogin() {
   const router = useRouter();
+  const { refresh } = useAdminAccess();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -19,44 +21,49 @@ export default function AdminLogin() {
     setLoading(true);
     setError("");
 
-    const supabase = browserSupabase();
+    try {
+      const supabase = browserSupabase();
 
-    if (!supabase) {
+      if (!supabase) {
+        setError(
+          "Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to the project environment."
+        );
+        return;
+      }
+
+      const { data, error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user || !data.session) {
+        setError(
+          "Login succeeded, but the authentication session was not ready. Please try again."
+        );
+        return;
+      }
+
+      refresh();
+      router.replace("/admin");
+    } catch (loginError) {
       setError(
-        "Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to the project environment."
+        loginError instanceof Error
+          ? loginError.message
+          : "Unable to sign in right now. Please try again."
       );
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data, error: signInError } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-    if (signInError) {
-      setError(signInError.message);
-      setLoading(false);
-      return;
-    }
-
-    // Confirm that Supabase has an authenticated user
-    // before navigating to the protected admin area.
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user || !data.session) {
-      setError(
-        "Login succeeded, but the authentication session was not ready. Please try again."
-      );
-      setLoading(false);
-      return;
-    }
-
-    router.replace("/admin");
-    router.refresh();
   }
 
   return (

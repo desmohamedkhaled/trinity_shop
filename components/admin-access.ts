@@ -121,7 +121,11 @@ export function AdminAccessProvider({
     () => ({
       access,
       status,
-      refresh: () => setRefreshKey((value) => value + 1),
+      refresh: () => {
+        setAccess(null);
+        setStatus("loading");
+        setRefreshKey((value) => value + 1);
+      },
       can: (permission) =>
         status === "loaded" &&
         Boolean(access?.permissions.includes(permission)),
