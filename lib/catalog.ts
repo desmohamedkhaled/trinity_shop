@@ -26,7 +26,7 @@ export async function getProducts(): Promise<Product[]> {
 
     const { data, error } = await supabase
       .from("products")
-      .select("id, slug, name, description, meaning, price, category, stock, image_url, is_featured, is_published, occasion, gift_for, created_at")
+      .select("id, slug, name, description, meaning, price, category, stock, stock_status, image_url, is_featured, is_published, occasion, gift_for, created_at")
       .eq("is_published", true)
       .order("created_at", { ascending: false });
 

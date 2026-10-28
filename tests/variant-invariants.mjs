@@ -10,6 +10,7 @@ const imageAvailabilityMigration = await readFile(new URL("../supabase/migration
 const imageRoute = await readFile(new URL("../app/api/admin/products/[id]/images/route.ts", import.meta.url), "utf8");
 const catalog = await readFile(new URL("../lib/catalog.ts", import.meta.url), "utf8");
 const productDetail = await readFile(new URL("../components/product-detail.tsx", import.meta.url), "utf8");
+const stripeCheckout = await readFile(new URL("../app/api/stripe/create-checkout-session/route.ts", import.meta.url), "utf8");
 
 function section(name, callback) {
   callback();
@@ -89,6 +90,12 @@ section("storefront filters option galleries by positive image availability", ()
   assert.match(catalog, /product_variant_images\(id, variant_id, image_url, alt_text, sort_order, available_quantity\)/);
   assert.match(productDetail, /image\.available_quantity \?\? 0\) > 0/);
   assert.match(productDetail, /image: optionImages\[0\]\?\.image_url \?\? ""/);
+});
+
+section("catalog uses authoritative product stock status and checkout explains stock conflicts", () => {
+  assert.match(catalog, /\.select\("id, slug, name, description, meaning, price, category, stock, stock_status,/);
+  assert.match(stripeCheckout, /Return to your cart, remove the unavailable item or reduce its quantity/);
+  assert.doesNotMatch(stripeCheckout, /Please refresh your cart/);
 });
 
 section("specification values use variant fields and compact vector icons", () => {

@@ -87,7 +87,7 @@ export async function POST(request: Request) {
     console.error("Atomic Stripe stock reservation failed", error);
     const message = getErrorMessage(error);
     if (isStockConflict(message)) {
-      return NextResponse.json({ error: "Some products are no longer available. Please refresh your cart." }, { status: 409 });
+      return NextResponse.json({ error: "One or more cart items are unavailable or have insufficient stock. Return to your cart, remove the unavailable item or reduce its quantity, then try again." }, { status: 409 });
     }
     return NextResponse.json({ error: "We couldn't verify stock for this checkout. Please try again, or contact us if the problem continues." }, { status: 500 });
   }
