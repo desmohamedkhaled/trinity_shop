@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requirePermission, serviceSupabase } from "@/lib/admin";
+import { getImageFileExtension, validateImageFile } from "@/lib/image-upload";
 
 type GalleryMetadata = {
   stableIndex: number;
@@ -20,22 +21,6 @@ function galleryErrorMessage(error: { code?: string; message: string }) {
   return error.message.includes("available_quantity")
     ? "The local image availability migration is not applied. Apply it to this DEV database only after approval before saving image assignments or quantities."
     : error.message;
-}
-
-function getExtension(fileName: string, contentType: string) {
-  const fromName = fileName.split(".").pop()?.toLowerCase();
-
-  if (fromName && /^[a-z0-9]+$/.test(fromName)) {
-    return fromName;
-  }
-
-  const fromType = contentType.split("/")[1]?.toLowerCase();
-
-  if (fromType && /^[a-z0-9]+$/.test(fromType)) {
-    return fromType === "jpeg" ? "jpg" : fromType;
-  }
-
-  return "bin";
 }
 
 export async function POST(
@@ -147,16 +132,25 @@ export async function POST(
       continue;
     }
 
-    if (!file.type.startsWith("image/")) {
+    const validationError = await validateImageFile(file);
+    if (validationError) {
       results.push({
         fileName: file.name,
         success: false,
-        error: "Only image files are allowed.",
+        error: validationError,
       });
       continue;
     }
 
-    const extension = getExtension(file.name, file.type);
+    const extension = getImageFileExtension(file.type);
+    if (!extension) {
+      results.push({
+        fileName: file.name,
+        success: false,
+        error: "Only PNG, JPEG, and WebP images are allowed.",
+      });
+      continue;
+    }
 
     const storagePath =
       `products/${productId}/${variant ? `variants/${variant.id}/` : "gallery/"}` +
@@ -340,34 +334,63 @@ export async function PATCH(
     if (new Set(sourceIds).size !== sourceIds.length) {
       return NextResponse.json({ error: "Source gallery image IDs must be unique." }, { status: 400 });
     }
+    let sourceImages: { id: string; image_url: string; alt_text: string | null; sort_order: number }[] = [];
     if (sourceIds.length) {
-      const { data: sourceImages, error: sourceError } = await supabase
+      const { data, error: sourceError } = await supabase
         .from("product_images")
         .select("id,image_url,alt_text,sort_order")
         .eq("product_id", productId)
         .in("id", sourceIds);
       if (sourceError) return NextResponse.json({ error: sourceError.message }, { status: 400 });
-      if ((sourceImages ?? []).length !== sourceIds.length) {
+      if ((data ?? []).length !== sourceIds.length) {
         return NextResponse.json({ error: "One or more images are not in this product's shared gallery." }, { status: 400 });
       }
-      const { data: existingAssignments, error: existingError } = await supabase
-        .from("product_variant_images")
-        .select("image_url, available_quantity")
-        .eq("variant_id", body.variantId);
-      if (existingError) return NextResponse.json({ error: galleryErrorMessage(existingError) }, { status: 400 });
-      const quantitiesByUrl = new Map((existingAssignments ?? []).map((image) => [image.image_url, image.available_quantity]));
-      const { error: copyError } = await supabase.from("product_variant_images").upsert(
-        (sourceImages ?? []).map((image, index) => ({
+      const imagesById = new Map((data ?? []).map((image) => [image.id, image]));
+      for (const id of sourceIds) {
+        const image = imagesById.get(id);
+        if (image) sourceImages.push(image);
+      }
+    }
+
+    const { data: galleryImages, error: galleryError } = await supabase
+      .from("product_images")
+      .select("image_url")
+      .eq("product_id", productId);
+    if (galleryError) return NextResponse.json({ error: galleryError.message }, { status: 400 });
+
+    const { data: existingAssignments, error: existingError } = await supabase
+      .from("product_variant_images")
+      .select("id,image_url,available_quantity")
+      .eq("variant_id", body.variantId);
+    if (existingError) return NextResponse.json({ error: galleryErrorMessage(existingError) }, { status: 400 });
+
+    const quantitiesByUrl = new Map((existingAssignments ?? []).map((image) => [image.image_url, image.available_quantity]));
+    const { error: copyError } = await supabase.from("product_variant_images").upsert(
+      sourceImages.map((image, index) => ({
           variant_id: body.variantId,
           image_url: image.image_url,
           alt_text: image.alt_text,
           sort_order: index,
           available_quantity: quantitiesByUrl.get(image.image_url) ?? 0,
-        })),
-        { onConflict: "variant_id,image_url" },
-      );
-      if (copyError) return NextResponse.json({ error: galleryErrorMessage(copyError) }, { status: 400 });
+      })),
+      { onConflict: "variant_id,image_url" },
+    );
+    if (copyError) return NextResponse.json({ error: galleryErrorMessage(copyError) }, { status: 400 });
+
+    const galleryUrls = new Set((galleryImages ?? []).map((image) => image.image_url));
+    const selectedUrls = new Set(sourceImages.map((image) => image.image_url));
+    const removedAssignmentIds = (existingAssignments ?? [])
+      .filter((image) => galleryUrls.has(image.image_url) && !selectedUrls.has(image.image_url))
+      .map((image) => image.id);
+    if (removedAssignmentIds.length) {
+      const { error: deleteError } = await supabase
+        .from("product_variant_images")
+        .delete()
+        .eq("variant_id", body.variantId)
+        .in("id", removedAssignmentIds);
+      if (deleteError) return NextResponse.json({ error: galleryErrorMessage(deleteError) }, { status: 400 });
     }
+
     const { data: assignments, error: assignmentError } = await supabase
       .from("product_variant_images")
       .select("id, variant_id, image_url, alt_text, sort_order, available_quantity")

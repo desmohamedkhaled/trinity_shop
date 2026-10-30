@@ -11,6 +11,8 @@
     "test": "node smoke-test.mjs",
     "test:qa": "node tests/qa-http-smoke.mjs",
     "test:variants": "node tests/variant-invariants.mjs",
+    "test:image-upload": "node --experimental-strip-types tests/image-upload.mjs",
+    "test:checkout": "node --experimental-strip-types tests/checkout-validation.mjs",
     "build:turbo": "next build"
   },
   "dependencies": {

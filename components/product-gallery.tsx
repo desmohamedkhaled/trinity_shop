@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import {
   ChevronDown,
   ChevronLeft,
@@ -10,6 +9,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Product, ProductImage } from "@/lib/data";
+import { SafeImage } from "@/components/safe-image";
 
 export function ProductGallery({ product }: { product: Product }) {
   const images = useMemo<ProductImage[]>(() => {
@@ -157,7 +157,7 @@ export function ProductGallery({ product }: { product: Product }) {
             }
           `}
         >
-          <Image
+          <SafeImage
             src={image.image_url}
             alt={
               image.alt_text ||
@@ -292,7 +292,7 @@ export function ProductGallery({ product }: { product: Product }) {
               xl:min-h-[42rem]
             "
           >
-            <Image
+            <SafeImage
               src={current.image_url}
               alt={
                 current.alt_text ||

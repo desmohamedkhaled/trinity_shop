@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { Edit, Eye, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { getImageFileValidationError } from "@/lib/image-upload";
 
 const blank = {
   id: "",
@@ -82,12 +83,9 @@ export default function AdminEventsPage() {
   }
 
   async function upload(file: File) {
-    if (!file.type.startsWith("image/")) {
-      setError("Only image files are allowed");
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      setError("Maximum image size is 8MB");
+    const validationError = getImageFileValidationError(file);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -313,7 +311,7 @@ export default function AdminEventsPage() {
                 <label className="flex flex-col gap-2 text-sm font-black text-black/70">
                   Event Image*
                   <div className="flex flex-wrap items-center gap-3">
-                    <input type="file" accept="image/*" className="hidden" id="event-image-input" onChange={(e) => e.target.files && upload(e.target.files[0])} />
+                    <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" id="event-image-input" onChange={(e) => e.target.files && upload(e.target.files[0])} />
                     <label htmlFor="event-image-input" className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-[#083b68] px-4 py-3 text-xs font-black uppercase tracking-[.16em] text-white">
                       <Upload size={16} /> {uploading ? "Uploading..." : "Choose Image"}
                     </label>

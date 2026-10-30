@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requirePermission, serviceSupabase } from "@/lib/admin";
+import { getImageFileExtension, validateImageFile } from "@/lib/image-upload";
 
 async function storageClient() {
   const service = serviceSupabase();
@@ -45,9 +46,10 @@ export async function POST(request: Request) {
   const folder = requestedFolder === null || String(requestedFolder).trim() === "" ? "products" : String(requestedFolder).trim();
   if (!["products", "events", "occasions"].includes(folder)) return NextResponse.json({ error: "Invalid upload folder." }, { status: 400 });
   if (!(file instanceof File)) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
-  if (!file.type.startsWith("image/")) return NextResponse.json({ error: "Only image files are allowed" }, { status: 400 });
-  if (file.size > 8 * 1024 * 1024) return NextResponse.json({ error: "Maximum image size is 8MB" }, { status: 400 });
-  const ext = file.name.split(".").pop() || "jpg";
+  const validationError = await validateImageFile(file);
+  if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
+  const ext = getImageFileExtension(file.type);
+  if (!ext) return NextResponse.json({ error: "Only PNG, JPEG, and WebP images are allowed." }, { status: 400 });
   const path = `${folder}/${crypto.randomUUID()}.${ext}`;
   const { error } = await supabase.storage.from("trinity-media").upload(path, file, { contentType: file.type, upsert: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });

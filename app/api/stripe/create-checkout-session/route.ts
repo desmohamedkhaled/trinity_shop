@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { serviceSupabase } from "@/lib/admin";
 import { stripe } from "@/lib/stripe";
+import {
+  checkoutFailureResponse,
+  diagnoseCheckoutFailure,
+  getDatabaseErrorCode,
+  getSupabaseProjectRef,
+  normalizeCheckoutItems,
+  type CheckoutFailure,
+  type CheckoutItem,
+} from "@/lib/checkout-validation";
 
 type Customer = {
   name?: string;
@@ -12,43 +21,12 @@ type Customer = {
   address?: string;
 };
 
-type Item = { id?: string; variant_id?: string; quantity?: number };
-
-function isStockConflict(message: string) {
-  return [
-    "Product is unavailable",
-    "Selected option is no longer available",
-    "Only ",
-  ].some((stockMessage) => message.includes(stockMessage));
-}
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
-  return "";
-}
-
-function normalizeItems(items: Item[]) {
-  const merged = new Map<string, { id: string; variant_id?: string; quantity: number }>();
-  for (const item of items) {
-    const id = typeof item.id === "string" ? item.id.trim() : "";
-    const quantity = Number(item.quantity);
-    if (!id || !Number.isInteger(quantity) || quantity < 1 || quantity > 99) return null;
-    const key = `${id}:${item.variant_id || ""}`;
-    const current = merged.get(key);
-    merged.set(key, { id, variant_id: item.variant_id, quantity: (current?.quantity || 0) + quantity });
-  }
-  return Array.from(merged.values()).sort((left, right) => left.id.localeCompare(right.id));
-}
-
 export async function POST(request: Request) {
   const supabase = serviceSupabase();
   if (!supabase) return NextResponse.json({ error: "Checkout service is not configured." }, { status: 503 });
   if (!stripe) return NextResponse.json({ error: "Stripe is not configured for checkout." }, { status: 503 });
 
-  let body: { customer?: Customer; items?: Item[] };
+  let body: { customer?: Customer; items?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -61,7 +39,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Required checkout details and cart items are missing." }, { status: 400 });
   }
 
-  const items = normalizeItems(body.items);
+  const items = normalizeCheckoutItems(body.items);
   if (!items) return NextResponse.json({ error: "Each cart item must have a valid quantity." }, { status: 400 });
 
   const customerPayload = {
@@ -84,12 +62,23 @@ export async function POST(request: Request) {
     if (!data?.order) throw new Error("Stock reservation did not return an order.");
     reservation = data as typeof reservation;
   } catch (error) {
-    console.error("Atomic Stripe stock reservation failed", error);
-    const message = getErrorMessage(error);
-    if (isStockConflict(message)) {
-      return NextResponse.json({ error: "One or more cart items are unavailable or have insufficient stock. Return to your cart, remove the unavailable item or reduce its quantity, then try again." }, { status: 409 });
+    let failure: CheckoutFailure;
+    try {
+      failure = await diagnoseCheckoutFailure(supabase, items, error);
+    } catch (diagnosisError) {
+      console.error("Could not classify Stripe stock reservation failure", {
+        databaseCode: getDatabaseErrorCode(diagnosisError),
+        projectRef: getSupabaseProjectRef(),
+      });
+      failure = "technical_failure";
     }
-    return NextResponse.json({ error: "We couldn't verify stock for this checkout. Please try again, or contact us if the problem continues." }, { status: 500 });
+    console.error("Atomic Stripe stock reservation failed", {
+      failure,
+      databaseCode: getDatabaseErrorCode(error),
+      projectRef: getSupabaseProjectRef(),
+    });
+    const response = checkoutFailureResponse(failure);
+    return NextResponse.json({ error: response.error }, { status: response.status });
   }
 
   const order = reservation.order;

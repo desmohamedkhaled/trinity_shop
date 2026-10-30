@@ -8,9 +8,13 @@ const adminForm = await readFile(new URL("../app/admin/products/page.tsx", impor
 const productCard = await readFile(new URL("../components/product-card.tsx", import.meta.url), "utf8");
 const imageAvailabilityMigration = await readFile(new URL("../supabase/migrations/20261025000000_product_variant_image_availability.sql", import.meta.url), "utf8");
 const imageRoute = await readFile(new URL("../app/api/admin/products/[id]/images/route.ts", import.meta.url), "utf8");
+const uploadRoute = await readFile(new URL("../app/api/admin/upload/route.ts", import.meta.url), "utf8");
 const catalog = await readFile(new URL("../lib/catalog.ts", import.meta.url), "utf8");
 const productDetail = await readFile(new URL("../components/product-detail.tsx", import.meta.url), "utf8");
 const stripeCheckout = await readFile(new URL("../app/api/stripe/create-checkout-session/route.ts", import.meta.url), "utf8");
+const manualCheckout = await readFile(new URL("../app/api/orders/route.ts", import.meta.url), "utf8");
+const imageUpload = await readFile(new URL("../lib/image-upload.ts", import.meta.url), "utf8");
+const checkoutValidation = await readFile(new URL("../lib/checkout-validation.ts", import.meta.url), "utf8");
 
 function section(name, callback) {
   callback();
@@ -76,6 +80,10 @@ section("existing gallery images are assigned by URL without storage uploads", (
   assert.match(imageRoute, /from\("product_variant_images"\)\.upsert/);
   assert.match(imageRoute, /onConflict: "variant_id,image_url"/);
   assert.match(imageRoute, /not in this product's shared gallery/);
+  assert.match(imageRoute, /galleryUrls\.has\(image\.image_url\) && !selectedUrls\.has\(image\.image_url\)/);
+  assert.match(adminForm, /selectedGalleryImageIds\.map\(\(id\) => \(\{ id \}\)\)/);
+  assert.match(adminForm, /variant\.images \?\? variant\.product_variant_images \?\? \[\]/);
+  assert.match(adminForm, /isPersistedVariant\(variant\.id\)/);
 });
 
 section("assigned image quantities are validated and returned on reload", () => {
@@ -94,8 +102,20 @@ section("storefront filters option galleries by positive image availability", ()
 
 section("catalog uses authoritative product stock status and checkout explains stock conflicts", () => {
   assert.match(catalog, /\.select\("id, slug, name, description, meaning, price, category, stock, stock_status,/);
-  assert.match(stripeCheckout, /Return to your cart, remove the unavailable item or reduce its quantity/);
+  assert.match(stripeCheckout, /diagnoseCheckoutFailure/);
+  assert.match(checkoutValidation, /failure === "stock_conflict"/);
+  assert.match(manualCheckout, /diagnoseCheckoutFailure/);
+  assert.match(checkoutValidation, /normalizeCheckoutItems/);
+  assert.match(checkoutValidation, /failure === "invalid_variant"/);
   assert.doesNotMatch(stripeCheckout, /Please refresh your cart/);
+});
+
+section("uploads enforce the documented image limit and inspect file signatures", () => {
+  assert.match(imageUpload, /8 \* 1024 \* 1024/);
+  assert.match(imageUpload, /file\.size > MAX_IMAGE_UPLOAD_BYTES/);
+  assert.match(imageUpload, /The file contents do not match/);
+  assert.match(uploadRoute, /await validateImageFile\(file\)/);
+  assert.match(imageRoute, /await validateImageFile\(file\)/);
 });
 
 section("specification values use variant fields and compact vector icons", () => {
@@ -107,4 +127,4 @@ section("specification values use variant fields and compact vector icons", () =
   assert.match(productDetail, /KG/);
 });
 
-console.log("BLOCKED runtime checks: concurrent final-unit purchase and exactly-once DB transitions require the unapplied DEV migration and an isolated disposable database.");
+console.log("BLOCKED runtime checks: checkout stock transitions require an isolated disposable database and controlled fixtures; no real orders were created.");

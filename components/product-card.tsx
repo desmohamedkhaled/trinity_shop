@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { Eye, Heart, ZoomIn } from "lucide-react";
 import { motion } from "motion/react";
@@ -11,6 +10,7 @@ import { formatAUD } from "@/lib/currency";
 import { useStore } from "./store-provider";
 import { AddToCartButton } from "./add-to-cart-button";
 import { IconButton } from "@/components/icon-button";
+import { SafeImage } from "@/components/safe-image";
 
 export function ProductCard({ product }: { product: Product }) {
   const { toggleGiftList, isInGiftList } = useStore();
@@ -78,7 +78,7 @@ export function ProductCard({ product }: { product: Product }) {
             transition={{ duration: 0.45, ease: "easeOut" }}
             className="relative h-full w-full"
           >
-            <Image
+            <SafeImage
               src={product.image}
               alt={product.name}
               fill
@@ -192,7 +192,7 @@ export function ProductCard({ product }: { product: Product }) {
             aria-label={`Zoomed image of ${product.name}`}
             className="relative h-[80vh] w-full max-w-3xl"
           >
-            <Image
+            <SafeImage
               src={product.image}
               alt={product.name}
               fill

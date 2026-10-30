@@ -157,8 +157,9 @@ The executable test cases below are the minimum release register. `Status`, `Act
 | TC-PRODUCT-001 | Products | Detail/gallery | Open valid product | Published slug | Product slug | Open `/shop`, select product, verify title/price/image/gallery/cart | Data and controls match source | P1 | High | E2E | Not available | Browser | Blocked | Browser framework not installed | None | None |
 | TC-PRODUCT-002 | Products | Dynamic gallery | Test 0/1/2/22/100+ images | Isolated fixtures | Image fixtures | Open detail, cycle images, resize viewport | No broken controls/overflow | P1 | High | Integration | Not available | Supabase/browser | Not executed | Fixture not available | None | None |
 | TC-PRODUCT-003 | Admin Products | CRUD/status/featured | Super Admin session | Temporary product | Create/edit/delete/toggle status/featured | Server validates and public state follows | P1 | High | Integration | Not available | Browser/API | Blocked | Auth/test data required | None | None |
-| TC-OCC-001 | Admin Occasions | Upload | Authorized admin uploads valid image | Admin + media permission | PNG/JPG/WebP <=8MB | Select, upload, preview, save, refresh | URL persists and public occasion displays | P1 | High | Storage | Not available | Browser/Supabase | Blocked | Auth/Storage test required | None | None |
-| TC-OCC-002 | Admin Occasions | Negative upload | Authorized admin | Invalid MIME/oversize/empty | Upload each file | Server rejects and no bad URL is stored | P1 | High | Negative | Not available | API/Storage | Blocked | Fixture/auth required | None | None |
+| TC-OCC-001 | Admin Occasions | Upload | Authorized admin uploads valid image | Admin + media permission | PNG/JPEG/WebP <=8 MiB (8,388,608 bytes) | Select, upload, preview, save, refresh | URL persists and public occasion displays | P1 | High | Storage | Not available | Browser/Supabase | Blocked | Auth/Storage test required | None | None |
+| TC-OCC-002 | Admin Occasions | Negative upload | Authorized admin | Invalid MIME/signature, empty file, 8 MiB - 1 byte, exactly 8 MiB, and 8 MiB + 1 byte | Upload each file | Server rejects invalid/oversize files and accepts valid files through exactly 8 MiB | P1 | High | Negative | Partial | API/Storage | Blocked | Auth/Storage test required | None | None |
+| TC-PRODUCT-004 | Admin Products | Shared gallery assignment | Product Manager or higher with media upload permission | Product with two saved variants and shared gallery images | Select a subset for one variant, save, reload, remove selection | Only the chosen variant shows the selected thumbnails; source gallery rows and files remain intact | P1 | High | Integration | Not available | Browser/API/Supabase | Blocked | Admin session and isolated fixture required | None | None |
 | TC-AUTH-001 | Auth | Login/logout/session | Test accounts exist | Seven roles | Login, reload, logout, revisit admin | Correct session and redirect behavior | P0 | Critical | E2E | Not available | Supabase/browser | Blocked | Credentials unavailable | None | None |
 | TC-RBAC-001 | Authorization | Viewer restrictions | Viewer account | Viewer | Open direct admin URLs and call APIs | UI hides; server returns 401/403 | P0 | Critical | Security | Partial | Node/API | Blocked | Auth unavailable | None | None |
 | TC-RBAC-002 | Authorization | Product Manager | Product Manager account | Role grants | Test sidebar, `/admin/settings`, product API | Only effective permissions work; forbidden API remains denied | P0 | Critical | Security | Partial | Browser/API | Blocked | Auth unavailable | None | None |
@@ -251,9 +252,12 @@ Added QA command:
 
 ```text
 npm run test:qa
+npm run test:variants
+npm run test:image-upload
+npm run test:checkout
 ```
 
-`npm run test:qa` uses Node's built-in `fetch` only. It does not mutate data and covers public route markers, public JSON endpoints, and unauthenticated protected API behavior. Full authenticated browser/API/RLS coverage requires a test framework and isolated credentials that are not present in this repository.
+`npm run test:qa` uses Node's built-in `fetch` only. It does not mutate data and covers public route markers, public JSON endpoints, and unauthenticated protected API behavior. Variant, upload-boundary, and checkout-classification tests use local code and controlled in-memory data. They do not verify authenticated admin persistence, real upload transport, database RPC behavior, or create orders. Those integration checks require an isolated Supabase project and authenticated test account.
 
 ## Accessibility, Performance, SEO, and Cross-Browser Plan
 

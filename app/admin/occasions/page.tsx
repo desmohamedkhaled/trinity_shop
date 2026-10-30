@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { getImageFileValidationError } from "@/lib/image-upload";
 
 interface Occasion {
   id: string;
@@ -58,12 +59,9 @@ export default function AdminOccasionsPage() {
   }
 
   async function uploadImage(file: File) {
-    if (!file.type.startsWith("image/")) {
-      setError("Choose a common image file.");
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      setError("Images must be 8MB or smaller.");
+    const validationError = getImageFileValidationError(file);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -130,7 +128,7 @@ export default function AdminOccasionsPage() {
           {loading ? <tr><td colSpan={5} className="p-10 text-center text-black/50">Loading occasions...</td></tr> : rows.length === 0 ? <tr><td colSpan={5} className="p-10 text-center text-black/50">No occasions configured yet.</td></tr> : rows.map((item) => <tr key={item.id} className="border-t"><td className="p-4"><b>{item.name}</b><div className="text-xs text-black/45">{item.subtitle || "No subtitle"}</div></td><td>{item.slug}</td><td>{item.sort_order}</td><td>{item.is_published ? "Published" : "Draft"}</td><td className="p-4 text-right"><button onClick={() => start(item)} className="mr-3 font-bold text-[#1267a8]">Edit</button><button onClick={() => remove(item.id)} className="font-bold text-red-700">Delete</button></td></tr>)}
         </tbody></table>
       </div>
-      {open && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/40 p-5"><form onSubmit={save} className="my-5 w-full max-w-lg rounded-3xl bg-[#fffaf3] p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><h2 className="display-font text-3xl">{editing ? "Edit occasion" : "Add occasion"}</h2><button type="button" onClick={() => setOpen(false)} aria-label="Close">×</button></div><div className="mt-5 grid gap-3"><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Name" className="rounded-xl border p-3" /><input required value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value })} placeholder="Slug" className="rounded-xl border p-3" /><input value={form.subtitle || ""} onChange={(event) => setForm({ ...form, subtitle: event.target.value })} placeholder="Subtitle" className="rounded-xl border p-3" /><label className="grid gap-2 text-sm font-bold">Occasion image<input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadImage(file); }} disabled={uploading || saving} className="block w-full rounded-xl border border-dashed border-[#2479a8] bg-white p-3 text-sm" />{uploading && <span className="font-normal text-[#2479a8]">Uploading image...</span>}</label>{form.image_url && <div className="overflow-hidden rounded-2xl border bg-white"><img src={form.image_url} alt="Occasion preview" className="h-48 w-full object-cover" /></div>}<label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={form.is_published} onChange={(event) => setForm({ ...form, is_published: event.target.checked })} /> Published</label><label className="grid gap-2 text-sm font-bold">Sort order<input type="number" value={form.sort_order} onChange={(event) => setForm({ ...form, sort_order: Number(event.target.value) })} className="rounded-xl border p-3" /></label></div><button disabled={saving || uploading} className="mt-6 w-full rounded-xl bg-[#083b68] px-5 py-3 font-bold text-white disabled:opacity-50">{saving ? "Saving..." : uploading ? "Uploading..." : "Save occasion"}</button></form></div>}
+      {open && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/40 p-5"><form onSubmit={save} className="my-5 w-full max-w-lg rounded-3xl bg-[#fffaf3] p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><h2 className="display-font text-3xl">{editing ? "Edit occasion" : "Add occasion"}</h2><button type="button" onClick={() => setOpen(false)} aria-label="Close">×</button></div><div className="mt-5 grid gap-3"><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Name" className="rounded-xl border p-3" /><input required value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value })} placeholder="Slug" className="rounded-xl border p-3" /><input value={form.subtitle || ""} onChange={(event) => setForm({ ...form, subtitle: event.target.value })} placeholder="Subtitle" className="rounded-xl border p-3" /><label className="grid gap-2 text-sm font-bold">Occasion image<input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadImage(file); }} disabled={uploading || saving} className="block w-full rounded-xl border border-dashed border-[#2479a8] bg-white p-3 text-sm" />{uploading && <span className="font-normal text-[#2479a8]">Uploading image...</span>}</label>{form.image_url && <div className="overflow-hidden rounded-2xl border bg-white"><img src={form.image_url} alt="Occasion preview" className="h-48 w-full object-cover" /></div>}<label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={form.is_published} onChange={(event) => setForm({ ...form, is_published: event.target.checked })} /> Published</label><label className="grid gap-2 text-sm font-bold">Sort order<input type="number" value={form.sort_order} onChange={(event) => setForm({ ...form, sort_order: Number(event.target.value) })} className="rounded-xl border p-3" /></label></div><button disabled={saving || uploading} className="mt-6 w-full rounded-xl bg-[#083b68] px-5 py-3 font-bold text-white disabled:opacity-50">{saving ? "Saving..." : uploading ? "Uploading..." : "Save occasion"}</button></form></div>}
     </div>
   );
 }
