@@ -69,7 +69,7 @@ export async function GET() {
   if (access.response) return access.response;
   const { supabase } = access;
 
-  let { data, error } = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_shipping_locations(id, product_id, state, suburb, metro), product_variants(id, product_id, name, price, stock, length, width, height, weight, sort_order, product_variant_images(id, variant_id, image_url, alt_text, sort_order))').order('created_at', { ascending: false });
+  let { data, error } = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_shipping_locations(id, product_id, state, suburb, metro), product_variants(id, product_id, name, price, stock, length, width, height, weight, sort_order, inventory_mode, product_variant_images(id, variant_id, image_url, alt_text, sort_order, available_quantity, low_stock_threshold))').order('created_at', { ascending: false });
   if (error?.code === 'PGRST200') {
     const fallback = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_shipping_locations(id, product_id, state, suburb, metro)').order('created_at', { ascending: false });
     data = fallback.data;

@@ -29,7 +29,9 @@ function startingPrice(product: Product) {
 function isAvailable(product: Product) {
   if (product.stock_status === "Out of stock" || isComingSoonProduct(product)) return false;
   return product.variants?.length
-    ? product.variants.some((variant) => variant.stock > 0)
+    ? product.variants.some((variant) => (product.inventory_mode === "photo" || variant.inventory_mode === "photo")
+      ? (variant.images ?? []).some((image) => (image.available_quantity ?? 0) > 0)
+      : variant.stock > 0)
     : (product.stock ?? 0) > 0;
 }
 

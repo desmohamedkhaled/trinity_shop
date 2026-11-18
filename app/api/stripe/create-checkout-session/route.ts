@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { serviceSupabase } from "@/lib/admin";
 import { stripe } from "@/lib/stripe";
+import { validateCheckoutItems } from "@/lib/checkout-validation";
 
 type Customer = {
   name?: string;
@@ -47,6 +48,8 @@ export async function POST(request: Request) {
 
   const items = normalizeItems(body.items);
   if (!items) return NextResponse.json({ error: "Each cart item must have a valid quantity." }, { status: 400 });
+  const validationError = await validateCheckoutItems(supabase, items);
+  if (validationError) return NextResponse.json({ error: validationError }, { status: 409 });
 
   const customerPayload = {
     name: customer.name!.trim(),

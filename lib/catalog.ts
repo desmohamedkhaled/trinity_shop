@@ -40,7 +40,7 @@ export async function getProducts(): Promise<Product[]> {
       variantsByProduct = new Map<string, any[]>();
       for (const variant of variantRows ?? []) {
         const list = variantsByProduct.get(variant.product_id) ?? [];
-        list.push({ ...variant, images: variant.product_variant_images ?? [] });
+        list.push({ ...variant, images: (variant.product_variant_images ?? []).filter((image: any) => image.available_quantity > 0) });
         variantsByProduct.set(variant.product_id, list);
       }
     } else if (!["42P01", "PGRST200", "PGRST205"].includes(variantError.code || "")) {
@@ -115,7 +115,7 @@ export async function getProduct(slug: string): Promise<Product | null> {
       .eq("product_id", product.id)
       .order("sort_order", { ascending: true });
     if (!variantError) {
-      variants = (variantRows ?? []).map((variant: any) => ({ ...variant, images: variant.product_variant_images ?? [] }));
+      variants = (variantRows ?? []).map((variant: any) => ({ ...variant, images: (variant.product_variant_images ?? []).filter((image: any) => image.available_quantity > 0) }));
     } else if (!["42P01", "PGRST200", "PGRST205"].includes(variantError.code || "")) {
       console.error("Failed to load product variants:", variantError);
     }

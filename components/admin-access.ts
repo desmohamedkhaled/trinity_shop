@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { browserSupabase } from "@/lib/supabase";
 
 export type AdminPermission = string;
 
@@ -38,6 +39,28 @@ export function AdminAccessProvider({
 
   useEffect(() => {
     let active = true;
+    const supabase = browserSupabase();
+
+    if (!supabase) {
+      setAccess(null);
+      setStatus("error");
+      return () => {
+        active = false;
+      };
+    }
+
+    const { data: authSubscription } = supabase.auth.onAuthStateChange((event) => {
+      if (!active) return;
+
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        setAccess(null);
+        setStatus("loading");
+        setRefreshKey((value) => value + 1);
+      } else if (event === "SIGNED_OUT") {
+        setAccess(null);
+        setStatus("unauthorized");
+      }
+    });
 
     async function loadAccess() {
       const maxAttempts = 4;
@@ -114,6 +137,7 @@ export function AdminAccessProvider({
 
     return () => {
       active = false;
+      authSubscription.subscription.unsubscribe();
     };
   }, [refreshKey]);
 

@@ -11,6 +11,9 @@ const inventoryPage = await readFile(new URL("../app/admin/inventory/page.tsx", 
 const storeProvider = await readFile(new URL("../components/store-provider.tsx", import.meta.url), "utf8");
 const checkoutPage = await readFile(new URL("../app/(store)/checkout/page.tsx", import.meta.url), "utf8");
 const productCard = await readFile(new URL("../components/product-card.tsx", import.meta.url), "utf8");
+const imageRoute = await readFile(new URL("../app/api/admin/products/[id]/images/route.ts", import.meta.url), "utf8");
+const checkoutValidation = await readFile(new URL("../lib/checkout-validation.ts", import.meta.url), "utf8");
+const catalog = await readFile(new URL("../lib/catalog.ts", import.meta.url), "utf8");
 
 function section(name, callback) {
   callback();
@@ -80,6 +83,20 @@ section("photo aggregation and protected quick-set are wired", () => {
   assert.match(inventoryApi, /requirePermission\("inventory\.update"\)/);
   assert.match(inventoryApi, /body\.quickSet/);
   assert.match(inventoryPage, /Quick set all/);
+});
+
+section("admin image assignment is scoped and idempotent", () => {
+  assert.match(imageRoute, /Array\.from\(new Set/);
+  assert.match(imageRoute, /sourceImages \?\? \[\]\)\.length !== sourceIds\.length/);
+  assert.match(imageRoute, /onConflict: "variant_id,image_url"/);
+  assert.match(imageRoute, /variantId/);
+});
+
+section("photo artwork visibility is enforced in the server catalog", () => {
+  assert.match(catalog, /available_quantity > 0/);
+  assert.match(checkoutValidation, /available_quantity < quantity/);
+  assert.match(checkoutValidation, /Artwork cannot be selected for traditional inventory/);
+  assert.match(checkoutValidation, /Selected artwork is invalid for this option/);
 });
 
 console.log("BLOCKED runtime checks: concurrent final-unit purchase, webhook retries, aggregation triggers, and exactly-once DB transitions require the unapplied migration and an isolated disposable database.");

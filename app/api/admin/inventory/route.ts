@@ -15,7 +15,7 @@ export async function GET() {
 export async function PATCH(request: Request) {
   const access = await requirePermission("inventory.update");
   if (access.response) return access.response;
-  let body: { variantId?: string; imageId?: string; stock?: number; quickSet?: number };
+  let body: { variantId?: string; imageId?: string; stock?: number; quickSet?: number; expectedStock?: number };
   try {
     body = await request.json();
   } catch {
@@ -39,10 +39,11 @@ export async function PATCH(request: Request) {
       .update({ available_quantity: stock })
       .eq("id", body.imageId)
       .eq("variant_id", body.variantId)
+      .eq("available_quantity", body.expectedStock === undefined ? stock : body.expectedStock)
       .select("id, available_quantity")
       .maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    if (!data) return NextResponse.json({ error: "Artwork was not updated." }, { status: 409 });
+    if (!data) return NextResponse.json({ error: "Artwork changed elsewhere. Reload before saving this quantity." }, { status: 409 });
     return NextResponse.json(data);
   }
   if (body.quickSet !== undefined && body.variantId) {

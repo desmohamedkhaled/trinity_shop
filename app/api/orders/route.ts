@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { serviceSupabase } from "@/lib/admin";
+import { validateCheckoutItems } from "@/lib/checkout-validation";
 
 export async function POST(request: Request) {
   const supabase = serviceSupabase();
@@ -12,6 +13,8 @@ export async function POST(request: Request) {
   if (!customer.name || !customer.phone || !customer.country || !customer.governorate || !customer.city || !customer.address || !items.length) {
     return NextResponse.json({ error: "Required checkout details and cart items are missing." }, { status: 400 });
   }
+  const validationError = await validateCheckoutItems(supabase, items);
+  if (validationError) return NextResponse.json({ error: validationError }, { status: 409 });
 
   const { data, error } = await supabase.rpc("create_checkout_order", { customer, items });
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });

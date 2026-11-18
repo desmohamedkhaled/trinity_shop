@@ -265,7 +265,12 @@ export async function PATCH(
 
   const { id: productId } = await params;
 
-  const body = await req.json();
+  let body: { variantId?: unknown; images?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid gallery assignment payload." }, { status: 400 });
+  }
 
   if (!Array.isArray(body.images)) {
     return NextResponse.json(
@@ -282,7 +287,14 @@ export async function PATCH(
       .eq("product_id", productId)
       .maybeSingle();
     if (variantError || !variant) return NextResponse.json({ error: variantError?.message || "Variant not found." }, { status: 400 });
-    const sourceIds = body.images.filter((image: { id?: unknown }) => typeof image.id === "string").map((image: { id: string }) => image.id);
+    const sourceIds = Array.from(new Set(
+      body.images
+        .filter((image): image is { id: string } => Boolean(image && typeof image === "object" && typeof (image as { id?: unknown }).id === "string"))
+        .map((image) => image.id),
+    ));
+    if (sourceIds.length !== body.images.length) {
+      return NextResponse.json({ error: "Each assigned gallery image must have a valid product image ID." }, { status: 400 });
+    }
     if (sourceIds.length) {
       const { data: sourceImages, error: sourceError } = await supabase
         .from("product_images")
@@ -290,6 +302,9 @@ export async function PATCH(
         .eq("product_id", productId)
         .in("id", sourceIds);
       if (sourceError) return NextResponse.json({ error: sourceError.message }, { status: 400 });
+      if ((sourceImages ?? []).length !== sourceIds.length) {
+        return NextResponse.json({ error: "One or more gallery images do not belong to this product." }, { status: 400 });
+      }
       const { error: copyError } = await supabase.from("product_variant_images").upsert(
         (sourceImages ?? []).map((image, index) => ({
           variant_id: body.variantId,
@@ -301,7 +316,13 @@ export async function PATCH(
       );
       if (copyError) return NextResponse.json({ error: copyError.message }, { status: 400 });
     }
-    return NextResponse.json({ ok: true });
+    const { data: assigned, error: assignedError } = await supabase
+      .from("product_variant_images")
+      .select("id, variant_id, image_url, alt_text, sort_order, available_quantity, low_stock_threshold")
+      .eq("variant_id", body.variantId)
+      .order("sort_order", { ascending: true });
+    if (assignedError) return NextResponse.json({ error: assignedError.message }, { status: 400 });
+    return NextResponse.json({ ok: true, assigned: assigned ?? [] });
   }
 
   for (let index = 0; index < body.images.length; index += 1) {
@@ -326,6 +347,23 @@ export async function PATCH(
   return NextResponse.json({ ok: true });
 }
 
+export async function GET(
+  _: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const access = await requirePermission("media.upload");
+  if (access.response) return access.response;
+  const { supabase } = access;
+  const { id: productId } = await params;
+  const { data, error } = await supabase
+    .from("product_images")
+    .select("id, product_id, image_url, alt_text, sort_order")
+    .eq("product_id", productId)
+    .order("sort_order", { ascending: true });
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  return NextResponse.json(data ?? []);
+}
+
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -347,12 +385,41 @@ export async function DELETE(
 
   const url = new URL(req.url);
   const imageId = url.searchParams.get("imageId");
+  const variantId = url.searchParams.get("variantId");
 
   if (!imageId) {
     return NextResponse.json(
       { error: "imageId is required." },
       { status: 400 }
     );
+  }
+
+  if (variantId) {
+    const { data: variant, error: variantError } = await service
+      .from("product_variants")
+      .select("id")
+      .eq("id", variantId)
+      .eq("product_id", productId)
+      .maybeSingle();
+    if (variantError || !variant) {
+      return NextResponse.json({ error: variantError?.message || "Variant not found." }, { status: 404 });
+    }
+    const { data: assigned, error: assignedError } = await service
+      .from("product_variant_images")
+      .select("id")
+      .eq("id", imageId)
+      .eq("variant_id", variantId)
+      .maybeSingle();
+    if (assignedError || !assigned) {
+      return NextResponse.json({ error: assignedError?.message || "Assigned image not found." }, { status: 404 });
+    }
+    const { error: deleteAssignmentError } = await service
+      .from("product_variant_images")
+      .delete()
+      .eq("id", imageId)
+      .eq("variant_id", variantId);
+    if (deleteAssignmentError) return NextResponse.json({ error: deleteAssignmentError.message }, { status: 400 });
+    return NextResponse.json({ ok: true });
   }
 
   const { data: image, error: imageError } = await service

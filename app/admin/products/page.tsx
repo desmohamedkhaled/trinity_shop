@@ -167,6 +167,7 @@ export default function AdminProducts() {
   const [variantFiles, setVariantFiles] = useState<Record<string, File[]>>({});
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState({ uploaded: 0, total: 0 });
+  const [selectedGalleryIds, setSelectedGalleryIds] = useState<string[]>([]);
   const [originalProduct, setOriginalProduct] = useState<any | null>(null);
 
   async function load() {
@@ -233,6 +234,7 @@ export default function AdminProducts() {
     });
     setGallery(Array.isArray(p.product_images) ? [...p.product_images].sort((a, b) => a.sort_order - b.sort_order) : []);
     setGalleryFiles([]);
+    setSelectedGalleryIds([]);
     setVariantFiles({});
 
     setError("");
@@ -361,14 +363,24 @@ export default function AdminProducts() {
 
   async function assignExistingGallery(variantId: string) {
     if (!editing) return;
+    if (!selectedGalleryIds.length) {
+      setError("Select at least one product gallery image to assign.");
+      return;
+    }
     const response = await fetch(`/api/admin/products/${editing}/images`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ variantId, images: gallery }),
+      body: JSON.stringify({ variantId, images: gallery.filter((image) => selectedGalleryIds.includes(image.id)) }),
     });
     const data = await response.json();
     if (!response.ok) setError(data.error || "Could not assign existing images to this option.");
-    else setSuccess("Existing product images assigned to the selected option.");
+    else {
+      setForm((current) => ({
+        ...current,
+        variants: (current.variants || []).map((variant) => variant.id === variantId ? { ...variant, product_variant_images: data.assigned } : variant),
+      }));
+      setSuccess("Existing product images assigned to the selected option.");
+    }
   }
 
   async function deleteGalleryImage(image: ProductImage) {
@@ -377,6 +389,20 @@ export default function AdminProducts() {
     const data = await response.json();
     if (!response.ok) return setError(data.error || "Could not delete gallery image.");
     setGallery((current) => current.filter((item) => item.id !== image.id));
+  }
+
+  async function unassignVariantImage(variantId: string, image: ProductImage) {
+    if (!editing || !window.confirm("Unassign this image from the option? Its option relationship and artwork stock will be removed.")) return;
+    const response = await fetch(`/api/admin/products/${editing}/images?variantId=${encodeURIComponent(variantId)}&imageId=${encodeURIComponent(image.id)}`, { method: "DELETE" });
+    const data = await response.json();
+    if (!response.ok) return setError(data.error || "Could not unassign image.");
+    setForm((current) => ({
+      ...current,
+      variants: (current.variants || []).map((variant) => variant.id === variantId
+        ? { ...variant, product_variant_images: (variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.filter((item) => item.id !== image.id) }
+        : variant),
+    }));
+    setSuccess("Image unassigned.");
   }
 
   async function moveGalleryImage(index: number, direction: -1 | 1) {
@@ -846,9 +872,15 @@ const giftForOptions = Array.from(
                             Add option gallery
                             <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => { const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/")); setVariantFiles((current) => ({ ...current, [variant.id]: [...(current[variant.id] || []), ...files] })); event.target.value = ""; }} />
                           </label>
-                          {gallery.length > 0 && <button type="button" onClick={() => assignExistingGallery(variant.id)} className="rounded-lg border px-3 py-2 font-bold">Assign existing product images</button>}
-                          {(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.length ? <span className="text-black/50">{(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.length} assigned images</span> : null}
+                          {gallery.length > 0 && <button type="button" onClick={() => assignExistingGallery(variant.id)} className="rounded-lg border px-3 py-2 font-bold">Assign selected product images</button>}
+                          {(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.length ? <span className="text-black/50">{(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.length} assigned images</span> : <span className="text-black/50">No assigned images</span>}
                           {variantFiles[variant.id]?.length ? <span className="text-[#2479a8]">{variantFiles[variant.id].length} pending upload</span> : null}
+                          {(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.map((image) => (
+                            <span key={image.id} className="group relative h-12 w-12 overflow-hidden rounded-lg border border-black/10">
+                              <Image src={image.image_url} alt={image.alt_text || "Assigned artwork"} fill unoptimized className="object-cover" sizes="48px" />
+                              <button type="button" onClick={() => unassignVariantImage(variant.id, image)} className="absolute inset-0 hidden bg-black/60 text-[10px] font-bold text-white group-hover:block" aria-label={`Unassign ${image.alt_text || "assigned image"}`}>Remove</button>
+                            </span>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -905,6 +937,14 @@ const giftForOptions = Array.from(
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {gallery.map((image, index) => (
                     <div key={image.id} className="group relative overflow-hidden rounded-xl border border-black/10 bg-[#f6f0e7]">
+                      <label className="absolute left-2 top-2 z-10 rounded bg-white/90 p-1 shadow">
+                        <input
+                          type="checkbox"
+                          checked={selectedGalleryIds.includes(image.id)}
+                          onChange={(event) => setSelectedGalleryIds((current) => event.target.checked ? [...current, image.id] : current.filter((id) => id !== image.id))}
+                          aria-label={`Select gallery image ${index + 1} for an option`}
+                        />
+                      </label>
                       <Image src={image.image_url} alt={image.alt_text || `${form.name || "Product"} gallery image ${index + 1}`} width={180} height={135} unoptimized className="aspect-[4/3] w-full object-cover" loading="lazy" />
                       <div className="absolute inset-x-1 bottom-1 flex items-center justify-between rounded-lg bg-black/65 p-1 text-white">
                         <button type="button" onClick={() => moveGalleryImage(index, -1)} disabled={index === 0} className="rounded p-1 disabled:opacity-30" aria-label="Move image earlier">â†</button>

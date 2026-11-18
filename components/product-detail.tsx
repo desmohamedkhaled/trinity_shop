@@ -22,7 +22,7 @@ export function ProductDetail({ product }: { product: Product }) {
     ? { ...product, price: variant.price, length: variant.length, width: variant.width, height: variant.height, weight: variant.weight, gallery: variant.images || product.gallery }
     : product;
   const photoMode = product.inventory_mode === "photo" || variant?.inventory_mode === "photo";
-  const artworkImages = (variant?.images || []).filter((image) => image.available_quantity !== undefined);
+  const artworkImages = (variant?.images || []).filter((image) => (image.available_quantity ?? 0) > 0);
   const selectedImage = artworkImages.find((image) => image.id === selectedImageId);
   const allDepleted = product.variants?.length
     ? product.variants.every((item) => item.stock <= 0)
