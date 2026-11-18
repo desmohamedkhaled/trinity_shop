@@ -22,7 +22,7 @@ export default function CheckoutPage() {
   const [stripeLoading, setStripeLoading] = useState(false);
   const [canceled, setCanceled] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
-  const items = cart.map((line) => ({ ...line, quantity: cartQuantities[`${line.product.id}:${line.variant?.id || "default"}`] || 1 }));
+  const items = cart.map((line) => ({ ...line, quantity: cartQuantities[`${line.product.id}:${line.variant?.id || "default"}:${line.image?.id || "default"}`] || 1 }));
   const subtotal = useMemo(() => items.reduce((sum, item) => sum + (item.variant?.price ?? item.product.price) * item.quantity, 0), [items]);
 
   useEffect(() => { fetch("/api/settings/public", { cache: "no-store" }).then((response) => response.json()).then((data) => setWhatsapp(String(data.whatsapp_number || ""))).catch(() => undefined); }, []);
@@ -35,7 +35,7 @@ export default function CheckoutPage() {
     if (!items.length) { setError("Your cart is empty."); return; }
     setPlacing(true); setError("");
     try {
-      const response = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customer: form, items: items.map(({ product, variant, quantity }) => ({ id: product.id, variant_id: variant?.id, quantity })) }) });
+      const response = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customer: form, items: items.map(({ product, variant, image, quantity }) => ({ id: product.id, variant_id: variant?.id, image_id: image?.id, quantity })) }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to place your order.");
       sessionStorage.setItem("trinity-last-order", JSON.stringify(data));
@@ -58,7 +58,7 @@ export default function CheckoutPage() {
       const response = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customer: form, items: items.map(({ product, variant, quantity }) => ({ id: product.id, variant_id: variant?.id, quantity })) }),
+        body: JSON.stringify({ customer: form, items: items.map(({ product, variant, image, quantity }) => ({ id: product.id, variant_id: variant?.id, image_id: image?.id, quantity })) }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to create your Stripe payment session.");

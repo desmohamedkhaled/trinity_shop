@@ -1,71 +1,79 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Image from "next/image";
+import { useEffect, useMemo, useState } from "react";
 
-interface InventoryProduct {
-  id: string;
-  name: string;
-  slug: string;
-  stock: number;
-  occasion?: string[] | null;
-  is_published: boolean;
-  updated_at?: string;
-}
+type Artwork = { id: string; image_url: string; alt_text?: string | null; available_quantity: number; low_stock_threshold: number };
+type Variant = { id: string; name: string; stock: number; inventory_mode: "traditional" | "photo"; length?: number; width?: number; height?: number; product_variant_images?: Artwork[] };
+type InventoryProduct = { id: string; name: string; category?: string; image_url?: string; stock: number; inventory_mode: "traditional" | "photo"; product_variants?: Variant[] };
 
 export default function InventoryPage() {
   const [products, setProducts] = useState<InventoryProduct[]>([]);
-  const [filter, setFilter] = useState("all");
-  const [occasionOptions, setOccasionOptions] = useState<string[]>([]);
-  const [occasionFilter, setOccasionFilter] = useState("all");
+  const [selectedId, setSelectedId] = useState("");
+  const [variantId, setVariantId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   async function load() {
     setLoading(true);
     try {
-      const response = await fetch("/api/admin/products", { cache: "no-store" });
+      const response = await fetch("/api/admin/inventory", { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not load inventory");
       setProducts(Array.isArray(data) ? data : []);
-      const occasionsResponse = await fetch("/api/admin/occasions", { cache: "no-store" });
-      const occasionsData = occasionsResponse.ok ? await occasionsResponse.json() : [];
-      setOccasionOptions(Array.isArray(occasionsData) ? occasionsData.filter((item) => item?.name).map((item) => item.name) : []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load inventory");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }
-
   useEffect(() => { load(); }, []);
 
-  async function updateStock(product: InventoryProduct, value: string) {
-    const stock = Number(value);
-    if (!Number.isInteger(stock) || stock < 0) return;
-    setSaving(product.id);
-    setError("");
+  const product = products.find((item) => item.id === selectedId);
+  const variants = useMemo(() => product?.product_variants ?? [], [product]);
+  const variant = variants.find((item) => item.id === variantId) ?? variants[0];
+  useEffect(() => { if (product && !variants.some((item) => item.id === variantId)) setVariantId(variants[0]?.id || ""); }, [selectedId, product, variantId, variants]);
+
+  async function save(imageId: string, value: number) {
+    setSaving(imageId); setError(""); setMessage("");
     try {
-      const response = await fetch(`/api/admin/products/${product.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stock }),
-      });
+      const response = await fetch("/api/admin/inventory", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ variantId: variant?.id, imageId, stock: value }) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not update stock");
-      setProducts((current) => current.map((item) => item.id === product.id ? { ...item, stock: data.stock, updated_at: data.updated_at } : item));
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Could not update stock");
-    } finally {
-      setSaving(null);
-    }
+      if (!response.ok) throw new Error(data.error || "Could not save artwork stock");
+      setMessage("Artwork stock saved.");
+      await load();
+    } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Could not save artwork stock"); }
+    finally { setSaving(null); }
+  }
+  async function quickSet() {
+    const value = Number(window.prompt("Set every artwork in this size to:", "5"));
+    if (!Number.isInteger(value) || value < 0) return;
+    setSaving(variant?.id || "quick"); setError(""); setMessage("");
+    try {
+      const response = await fetch("/api/admin/inventory", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ variantId: variant?.id, quickSet: value }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not quick-set artwork stock");
+      setMessage(`${data.updated} artworks updated.`);
+      await load();
+    } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Could not quick-set artwork stock"); }
+    finally { setSaving(null); }
   }
 
-  const visible = products.filter((product) => {
-    const matchesStock = filter === "all" || (filter === "out" ? product.stock === 0 : filter === "low" ? product.stock > 0 && product.stock <= 5 : product.stock > 5);
-    const matchesOccasion = occasionFilter === "all" || (Array.isArray(product.occasion) && product.occasion.includes(occasionFilter));
-    return matchesStock && matchesOccasion;
-  });
-
-  return <div className="p-6 md:p-10"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm text-black/45">Store</p><h1 className="text-4xl font-black">Inventory</h1><p className="mt-2 text-sm text-black/50">Manage stock from the live products table.</p></div><div className="flex flex-wrap gap-3"><label className="flex items-center gap-2 text-sm font-bold text-[#5d3b2a]"><span className="sr-only">Filter inventory by occasion</span><select value={occasionFilter} onChange={(event) => setOccasionFilter(event.target.value)} className="rounded-xl border border-[#d9c6b0] bg-[#fffdf8] px-4 py-3 text-sm font-semibold text-[#5d3b2a]"><option value="all">All Occasions</option>{occasionOptions.map((occasion) => <option key={occasion} value={occasion}>{occasion}</option>)}</select></label><select value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded-xl border border-[#d9c6b0] bg-[#fffdf8] px-4 py-3 text-sm font-semibold text-[#5d3b2a]"><option value="all">All stock</option><option value="out">Out of stock</option><option value="low">Low stock</option><option value="in">In stock</option></select></div></div>{error && <p className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}<div className="mt-8 overflow-x-auto rounded-2xl border border-black/10 bg-white shadow-sm"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-[#f5f6f7]"><tr><th className="p-4">Product</th><th>Status</th><th>Stock</th><th>Published</th><th>Last updated</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="p-10 text-center text-black/50">Loading inventory...</td></tr> : visible.length === 0 ? <tr><td colSpan={5} className="p-10 text-center text-black/50">No inventory records match this filter.</td></tr> : visible.map((product) => { const status = product.stock === 0 ? "Out of stock" : product.stock <= 5 ? "Low stock" : "In stock"; return <tr key={product.id} className="border-t"><td className="p-4 font-bold">{product.name}<div className="text-xs font-normal text-black/40">{product.slug}</div></td><td><span className={`rounded-full px-3 py-1 text-xs font-bold ${product.stock === 0 ? "bg-red-100 text-red-700" : product.stock <= 5 ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-700"}`}>{status}</span></td><td><input type="number" min="0" value={product.stock} disabled={saving === product.id} onChange={(event) => updateStock(product, event.target.value)} className="w-24 rounded-lg border px-3 py-2 disabled:opacity-50" /></td><td>{product.is_published ? "Published" : "Draft"}</td><td className="text-xs text-black/50">{product.updated_at ? new Date(product.updated_at).toLocaleString() : "—"}</td></tr>; })}</tbody></table></div></div>;
+  return <div className="p-6 md:p-10">
+    <h1 className="text-4xl font-black">Visual inventory</h1>
+    <p className="mt-2 text-sm text-black/50">Select a product, size, and artwork to manage photo-level stock.</p>
+    {error && <p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+    {message && <p className="mt-5 rounded-xl bg-green-50 p-4 text-sm text-green-700">{message}</p>}
+    <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(18rem,24rem)_1fr]">
+      <section className="grid gap-3">
+        {loading ? <p>Loading inventory...</p> : products.map((item) => <button key={item.id} onClick={() => { setSelectedId(item.id); setVariantId(""); }} className={`flex items-center gap-3 rounded-2xl border p-3 text-left ${item.id === selectedId ? "border-[#083b68] bg-[#eef5f8]" : "border-black/10 bg-white"}`}>
+          <div className="relative h-16 w-16 overflow-hidden rounded-xl bg-[#eadfce]">{item.image_url && <Image src={item.image_url} alt="" fill className="object-cover" sizes="64px" />}</div>
+          <span className="min-w-0 flex-1"><strong className="block truncate">{item.name}</strong><small className="text-black/50">{item.category || "Product"}</small></span><b>{item.stock}</b>
+        </button>)}
+      </section>
+      <section className="rounded-2xl border border-black/10 bg-white p-5">
+        {!product ? <p className="text-black/50">Choose a product to view its sizes.</p> : <><div className="flex flex-wrap gap-2">{variants.map((item) => <button key={item.id} onClick={() => setVariantId(item.id)} className={`rounded-full px-4 py-2 text-sm font-bold ${item.id === variant?.id ? "bg-[#083b68] text-white" : "bg-[#f3eee6]"}`}>{item.name}</button>)}</div>{variant?.inventory_mode === "photo" ? <><div className="mt-5 flex items-center justify-between"><h2 className="text-xl font-black">{variant.name} artwork</h2><button onClick={quickSet} disabled={Boolean(saving)} className="rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50">Quick set all</button></div><div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">{(variant.product_variant_images ?? []).map((image) => <div key={image.id} className="rounded-xl border border-black/10 p-2"><div className="relative aspect-square overflow-hidden rounded-lg bg-[#eadfce]"><Image src={image.image_url} alt={image.alt_text || "Artwork"} fill className="object-cover" sizes="180px" /></div><input type="number" min="0" value={image.available_quantity} disabled={saving === image.id} onChange={(event) => save(image.id, Number(event.target.value))} className="mt-2 w-full rounded-lg border px-2 py-1 text-center font-bold" aria-label="Artwork stock" /></div>)}</div></> : <p className="mt-6 text-sm text-black/60">Traditional inventory: {variant?.stock ?? 0} units. Artwork controls are disabled until this size is explicitly switched to photo inventory.</p>}</>}
+      </section>
+    </div>
+  </div>;
 }

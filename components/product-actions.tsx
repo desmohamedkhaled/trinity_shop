@@ -2,18 +2,18 @@
 
 import { Heart } from "lucide-react";
 
-import type { Product, ProductVariant } from "@/lib/data";
+import type { Product, ProductImage, ProductVariant } from "@/lib/data";
 
 import { useStore } from "@/components/store-provider";
 
 import { AddToCartButton } from "@/components/add-to-cart-button";
 
-export function ProductActions({ product, variant }: { product: Product; variant?: ProductVariant }) {
+export function ProductActions({ product, variant, image }: { product: Product; variant?: ProductVariant; image?: ProductImage }) {
   const { toggleGiftList, isInGiftList } = useStore();
 
   return (
     <div className="flex flex-wrap gap-3">
-      <AddToCartButton product={product} variant={variant} />
+      <AddToCartButton product={product} variant={variant} image={image} />
 
       <button
         onClick={() => toggleGiftList(product)}

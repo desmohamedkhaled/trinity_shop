@@ -53,6 +53,7 @@ function validateVariants(value: unknown) {
       width: dimension(variant.width),
       height: dimension(variant.height),
       weight: dimension(variant.weight),
+      inventory_mode: variant.inventory_mode === "photo" ? "photo" : "traditional",
       sort_order: index,
     };
   });
@@ -86,11 +87,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: 'One or more variants do not belong to this product.' }, { status: 400 });
     }
   }
-  const allowed = ['slug', 'name', 'description', 'meaning', 'price', 'category', 'stock', 'stock_status', 'image_url', 'is_featured', 'is_published', 'occasion', 'gift_for', 'length', 'width', 'height', 'weight'];
+  const allowed = ['slug', 'name', 'description', 'meaning', 'price', 'category', 'stock', 'stock_status', 'inventory_mode', 'image_url', 'is_featured', 'is_published', 'occasion', 'gift_for', 'length', 'width', 'height', 'weight'];
   const row: Record<string, any> = {};
 
   for (const k of allowed) {
-    if (b[k] !== undefined) row[k] = ['price', 'stock'].includes(k) ? Number(b[k]) : ['length', 'width', 'height', 'weight'].includes(k) ? dimension(b[k]) : b[k];
+    if (b[k] !== undefined) row[k] = k === 'inventory_mode' ? (b[k] === 'photo' ? 'photo' : 'traditional') : ['price', 'stock'].includes(k) ? Number(b[k]) : ['length', 'width', 'height', 'weight'].includes(k) ? dimension(b[k]) : b[k];
   }
   if (row.slug !== undefined && (typeof row.slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(row.slug))) {
     return NextResponse.json({ error: 'Slug must use lowercase letters, numbers, and hyphens.' }, { status: 400 });

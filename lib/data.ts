@@ -18,6 +18,7 @@ export type Product = {
   stock?: number;
   gallery?: ProductImage[];
   stock_status?: "In stock" | "Out of stock";
+  inventory_mode?: "traditional" | "photo";
   variants?: ProductVariant[];
 };
 
@@ -35,12 +36,12 @@ export type ProductShippingLocation = {
 
 export type ProductImage = {
   id: string;
-  product_id?: string;
-  variant_id?: string;
+  product_id: string;
   image_url: string;
   alt_text?: string | null;
   sort_order: number;
   available_quantity?: number;
+  low_stock_threshold?: number;
 };
 
 export type ProductVariant = {
@@ -54,6 +55,7 @@ export type ProductVariant = {
   height?: number | null;
   weight?: number | null;
   images?: ProductImage[];
+  inventory_mode?: "traditional" | "photo";
 };
 
 export type Occasion = {

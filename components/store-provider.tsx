@@ -1,12 +1,12 @@
  "use client";
 import { createContext, useContext, useEffect, useState } from "react";
-import { isComingSoonProduct, type Product, type ProductVariant } from "@/lib/data";
+import { isComingSoonProduct, type Product, type ProductImage, type ProductVariant } from "@/lib/data";
 
-export type CartLine = { product: Product; variant?: ProductVariant };
+export type CartLine = { product: Product; variant?: ProductVariant; image?: ProductImage };
 type StoreContextType = {
   cart: CartLine[];
   cartQuantities: Record<string, number>;
-  addToCart: (p: Product, variant?: ProductVariant) => void;
+  addToCart: (p: Product, variant?: ProductVariant, image?: ProductImage) => void;
   removeFromCart: (id: string) => void;
   setCartQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
@@ -55,14 +55,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("trinity-gift-quantities", JSON.stringify(quantities));
   }, [cart, cartQuantities, giftList, hydrated, quantities]);
 
-  const lineId = (p: Product, variant?: ProductVariant) => `${p.id}:${variant?.id || "default"}`;
-  const addToCart = (p: Product, variant?: ProductVariant) => {
+  const lineId = (p: Product, variant?: ProductVariant, image?: ProductImage) => `${p.id}:${variant?.id || "default"}:${image?.id || "default"}`;
+  const addToCart = (p: Product, variant?: ProductVariant, image?: ProductImage) => {
     if (isComingSoonProduct(p)) return;
-    const id = lineId(p, variant);
-    setCart((items) => items.some((item) => lineId(item.product, item.variant) === id) ? items : [...items, { product: p, variant }]);
+    const id = lineId(p, variant, image);
+    setCart((items) => items.some((item) => lineId(item.product, item.variant, item.image) === id) ? items : [...items, { product: p, variant, image }]);
     setCartQuantities((items) => ({ ...items, [id]: items[id] || 1 }));
   };
-  const removeFromCart = (id: string) => { setCart((items) => items.filter((item) => lineId(item.product, item.variant) !== id)); setCartQuantities((items) => { const next = { ...items }; delete next[id]; return next; }); };
+  const removeFromCart = (id: string) => { setCart((items) => items.filter((item) => lineId(item.product, item.variant, item.image) !== id)); setCartQuantities((items) => { const next = { ...items }; delete next[id]; return next; }); };
   const setCartQuantity = (id: string, quantity: number) => setCartQuantities((items) => ({ ...items, [id]: Math.max(1, Math.min(99, quantity)) }));
   const clearCart = () => { setCart([]); setCartQuantities({}); };
   const addToGiftList = (p: Product) => { setGiftList((x) => x.some(i => i.id === p.id) ? x : [...x, p]); setQuantities(q => ({...q,[p.id]:q[p.id]||1})); };
@@ -70,7 +70,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const toggleGiftList = (p: Product) => { setGiftList((items) => { if (items.some((item) => item.id === p.id)) return items.filter((item) => item.id !== p.id); return [...items, p]; }); setQuantities((current) => { if (current[p.id]) return current; return { ...current, [p.id]: 1 }; }); };
   const setQuantity = (id:string, quantity:number) => setQuantities(q => ({...q,[id]:Math.max(1,Math.min(99,quantity))}));
   const clearGiftList = () => { setGiftList([]); setQuantities({}); };
-  const cartCount = cart.reduce((total, line) => total + (cartQuantities[lineId(line.product, line.variant)] || 1), 0);
+  const cartCount = cart.reduce((total, line) => total + (cartQuantities[lineId(line.product, line.variant, line.image)] || 1), 0);
   return <StoreContext.Provider value={{cart,cartQuantities,addToCart,removeFromCart,setCartQuantity,clearCart,cartCount,giftList,quantities,addToGiftList,removeFromGiftList,toggleGiftList,setQuantity,clearGiftList,isInGiftList: id => giftList.some(i => i.id === id)}}>{children}</StoreContext.Provider>;
 }
 export function useStore() {

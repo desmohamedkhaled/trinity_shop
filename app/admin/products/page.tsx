@@ -1,17 +1,17 @@
 ﻿ "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Check, ChevronDown, ImagePlus, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import type { Product, ProductImage, ProductShippingLocation, ProductVariant } from "@/lib/data";
 import { formatAUD } from "@/lib/currency";
-import { getImageFileValidationError } from "@/lib/image-upload";
-import { SafeImage } from "@/components/safe-image";
 
 type Form = Partial<Product> & {
   stock?: number;
   image_url?: string;
   is_published?: boolean;
   stock_status?: "In stock" | "Out of stock";
+  inventory_mode?: "traditional" | "photo";
   variants?: ProductVariant[];
 };
 
@@ -132,6 +132,7 @@ const blank: Form = {
   price: 0,
   stock: 0,
   stock_status: "In stock",
+  inventory_mode: "traditional",
   variants: [],
   image_url: "",
   description: "",
@@ -164,10 +165,6 @@ export default function AdminProducts() {
   const [gallery, setGallery] = useState<ProductImage[]>([]);
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const [variantFiles, setVariantFiles] = useState<Record<string, File[]>>({});
-  const [savingVariantImages, setSavingVariantImages] = useState(false);
-  const [assigningVariantId, setAssigningVariantId] = useState<string | null>(null);
-  const [selectedGalleryImageIds, setSelectedGalleryImageIds] = useState<string[]>([]);
-  const [savingGalleryAssignments, setSavingGalleryAssignments] = useState(false);
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState({ uploaded: 0, total: 0 });
   const [originalProduct, setOriginalProduct] = useState<any | null>(null);
@@ -230,19 +227,13 @@ export default function AdminProducts() {
       height: p.height ?? null,
       weight: p.weight ?? null,
       stock_status: p.stock_status === "Out of stock" ? "Out of stock" : "In stock",
-      variants: Array.isArray(p.product_variants)
-        ? p.product_variants.map((variant: ProductVariant & { product_variant_images?: ProductImage[] }) => ({
-          ...variant,
-          images: variant.images ?? variant.product_variant_images ?? [],
-        }))
-        : [],
+      inventory_mode: p.inventory_mode === "photo" ? "photo" : "traditional",
+      variants: Array.isArray(p.product_variants) ? p.product_variants : [],
       product_shipping_locations: normalizedShippingLocations(p.product_shipping_locations),
     });
     setGallery(Array.isArray(p.product_images) ? [...p.product_images].sort((a, b) => a.sort_order - b.sort_order) : []);
     setGalleryFiles([]);
     setVariantFiles({});
-    setAssigningVariantId(null);
-    setSelectedGalleryImageIds([]);
 
     setError("");
     setSuccess("");
@@ -250,11 +241,6 @@ export default function AdminProducts() {
   }
 
   async function uploadImage(file: File) {
-    const validationError = getImageFileValidationError(file);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
     setError("");
     setUploading(true);
 
@@ -288,33 +274,11 @@ export default function AdminProducts() {
 
   function stageGalleryFiles(files: FileList | null) {
     if (!files) return;
-    const selected = Array.from(files);
-    const incoming = selected.filter((file) => !getImageFileValidationError(file));
-    const rejected = selected.filter((file) => getImageFileValidationError(file));
-    if (rejected.length) {
-      setError(`${rejected.map((file) => `${file.name}: ${getImageFileValidationError(file)}`).join("; ")}`);
-    } else {
-      setError("");
-    }
+    const incoming = Array.from(files).filter((file) => file.type.startsWith("image/"));
     setGalleryFiles((current) => {
       const keys = new Set(current.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
       return [...current, ...incoming.filter((file) => !keys.has(`${file.name}:${file.size}:${file.lastModified}`))];
     });
-  }
-
-  function stageVariantFiles(variantId: string, files: FileList | null) {
-    if (!files) return;
-    const selected = Array.from(files);
-    const incoming = selected.filter((file) => !getImageFileValidationError(file));
-    const rejected = selected.filter((file) => getImageFileValidationError(file));
-    if (rejected.length) {
-      setError(`${rejected.map((file) => `${file.name}: ${getImageFileValidationError(file)}`).join("; ")}`);
-    } else {
-      setError("");
-    }
-    if (incoming.length) {
-      setVariantFiles((current) => ({ ...current, [variantId]: [...(current[variantId] || []), ...incoming] }));
-    }
   }
 
   async function uploadGallery(productId: string) {
@@ -395,86 +359,16 @@ export default function AdminProducts() {
     return true;
   }
 
-  function openGalleryAssignment(variant: ProductVariant) {
-    const assignedUrls = new Set((variant.images || []).map((image) => image.image_url));
-    setAssigningVariantId(variant.id);
-    setSelectedGalleryImageIds(gallery.filter((image) => assignedUrls.has(image.image_url)).map((image) => image.id));
-    setError("");
-    setSuccess("");
-  }
-
-  function isPersistedVariant(variantId: string) {
-    return Array.isArray(originalProduct?.product_variants) &&
-      originalProduct.product_variants.some((variant: ProductVariant) => variant.id === variantId);
-  }
-
-  async function saveExistingGallery(variantId: string) {
+  async function assignExistingGallery(variantId: string) {
     if (!editing) return;
-    setError("");
-    setSavingGalleryAssignments(true);
-    try {
-      const response = await fetch(`/api/admin/products/${editing}/images`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variantId, images: selectedGalleryImageIds.map((id) => ({ id })) }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.error || "Could not assign existing images to this option.");
-        return;
-      }
-      setForm((current) => ({
-        ...current,
-        variants: (current.variants || []).map((variant) =>
-          variant.id === variantId ? { ...variant, images: data.assignments || [] } : variant
-        ),
-      }));
-      setAssigningVariantId(null);
-      setSuccess("Selected product gallery images saved for this option.");
-    } catch (error) {
-      console.error("[Gallery] Existing image assignment failed", error);
-      setError("Could not assign existing images. Check your connection and try again.");
-    } finally {
-      setSavingGalleryAssignments(false);
-    }
-  }
-
-  async function saveVariantImageAvailability(variant: ProductVariant) {
-    if (!editing || !variant.id || savingVariantImages) return;
-    const assignments = variant.images || [];
-    if (assignments.some((image) => !Number.isInteger(image.available_quantity) || (image.available_quantity ?? -1) < 0)) {
-      setError(`Image availability for ${variant.name} must use non-negative whole numbers.`);
-      return;
-    }
-    setError("");
-    setSavingVariantImages(true);
-    try {
-      const response = await fetch(`/api/admin/products/${editing}/images`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          variantId: variant.id,
-          assignments: assignments.map(({ id, available_quantity }) => ({ id, available_quantity })),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.error || "Could not save assigned image availability.");
-        return;
-      }
-      setForm((current) => ({
-        ...current,
-        variants: (current.variants || []).map((item) =>
-          item.id === variant.id ? { ...item, images: data.assignments || [] } : item
-        ),
-      }));
-      setSuccess(`Image availability saved for ${variant.name}.`);
-    } catch (error) {
-      console.error("[Gallery] Image availability save failed", error);
-      setError("Could not save image availability. Check your connection and try again.");
-    } finally {
-      setSavingVariantImages(false);
-    }
+    const response = await fetch(`/api/admin/products/${editing}/images`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ variantId, images: gallery }),
+    });
+    const data = await response.json();
+    if (!response.ok) setError(data.error || "Could not assign existing images to this option.");
+    else setSuccess("Existing product images assigned to the selected option.");
   }
 
   async function deleteGalleryImage(image: ProductImage) {
@@ -561,6 +455,7 @@ export default function AdminProducts() {
       price,
       stock,
       stock_status: form.stock_status || "In stock",
+      inventory_mode: form.inventory_mode || "traditional",
       variants: (form.variants || []).map(({ id, ...variant }) =>
         (originalProduct?.product_variants || []).some((saved: ProductVariant) => saved.id === id)
           ? { id, ...variant }
@@ -621,8 +516,6 @@ export default function AdminProducts() {
       setGallery([]);
       setGalleryFiles([]);
       setVariantFiles({});
-      setAssigningVariantId(null);
-      setSelectedGalleryImageIds([]);
       setOriginalProduct(null);
       setSuccess(editing ? "Product updated successfully." : "Product created successfully.");
 
@@ -666,8 +559,6 @@ export default function AdminProducts() {
     setGallery([]);
     setGalleryFiles([]);
     setVariantFiles({});
-    setAssigningVariantId(null);
-    setSelectedGalleryImageIds([]);
     setOpen(true);
   }
 
@@ -760,7 +651,7 @@ const giftForOptions = Array.from(
                 <article key={p.id} className="min-w-0 overflow-hidden rounded-2xl border border-[#dfcfbd] bg-[#fffdf8] shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
                   <div className="relative aspect-[4/3] overflow-hidden bg-[#eadfce]">
                     {image ? (
-                      <SafeImage src={image} alt={p.name || "Product"} fill unoptimized className="object-cover" sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 25vw" />
+                      <Image src={image} alt={p.name || "Product"} fill unoptimized className="object-cover" sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 25vw" />
                     ) : (
                       <div className="grid h-full place-items-center text-[#b48d55]" aria-label="No product image">
                         <ImagePlus size={30} />
@@ -812,7 +703,7 @@ const giftForOptions = Array.from(
 
               <button
                 type="button"
-                onClick={() => { setOpen(false); setAssigningVariantId(null); }}
+                onClick={() => setOpen(false)}
               >
                 <X />
               </button>
@@ -893,6 +784,13 @@ const giftForOptions = Array.from(
                   <option>Out of stock</option>
                 </select>
               </label>
+              <label className="text-sm font-bold">
+                Product inventory mode
+                <select value={form.inventory_mode || "traditional"} onChange={(e) => setForm({ ...form, inventory_mode: e.target.value as "traditional" | "photo" })} className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3">
+                  <option value="traditional">Traditional stock</option>
+                  <option value="photo">Photo-level artwork stock</option>
+                </select>
+              </label>
               <div className="sm:col-span-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold">Sizes / designs</span>
@@ -901,7 +799,7 @@ const giftForOptions = Array.from(
                 <div className="mt-3 grid gap-3">
                   {(form.variants || []).map((variant, index) => (
                     <div key={variant.id || index} className="rounded-xl border border-black/10 bg-white p-3">
-                      <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3">
+                      <div className="grid min-w-0 grid-cols-3 gap-3">
                         <label className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
                           Size / Design Name
                           <input aria-label={`Option ${index + 1} name`} value={variant.name} onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, name: e.target.value } : item) })} className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]" />
@@ -933,120 +831,24 @@ const giftForOptions = Array.from(
                           Stock / Quantity
                           <input aria-label={`Option ${index + 1} stock`} type="number" min="0" step="1" value={numericInputValue(variant.stock)} onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, stock: e.target.value === "" ? Number.NaN : Number(e.target.value) } : item) })} className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]" />
                         </label>
+                        <label className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
+                          Inventory mode
+                          <select value={variant.inventory_mode || "traditional"} onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, inventory_mode: e.target.value as "traditional" | "photo" } : item) })} className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]">
+                            <option value="traditional">Traditional</option>
+                            <option value="photo">Photo-level</option>
+                          </select>
+                        </label>
                         <button type="button" onClick={() => { if (window.confirm(`Remove ${variant.name || `option ${index + 1}`}? This will remove its gallery assignment when saved.`)) setForm({ ...form, variants: (form.variants || []).filter((_, itemIndex) => itemIndex !== index) }); }} className="rounded-lg p-2 text-red-700" aria-label={`Remove option ${index + 1}`}><Trash2 size={16} /></button>
                       </div>
                       {variant.id && editing && (
                         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                           <label className="cursor-pointer rounded-lg border border-[#0b4166]/20 bg-[#f6f0e7] px-3 py-2 font-bold text-[#0b4166]">
                             Add option gallery
-                            <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" onChange={(event) => { stageVariantFiles(variant.id, event.target.files); event.target.value = ""; }} />
+                            <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => { const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/")); setVariantFiles((current) => ({ ...current, [variant.id]: [...(current[variant.id] || []), ...files] })); event.target.value = ""; }} />
                           </label>
-                          {isPersistedVariant(variant.id) && <button type="button" onClick={() => openGalleryAssignment(variant)} className="rounded-lg border px-3 py-2 font-bold">Assign existing product images</button>}
+                          {gallery.length > 0 && <button type="button" onClick={() => assignExistingGallery(variant.id)} className="rounded-lg border px-3 py-2 font-bold">Assign existing product images</button>}
+                          {(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.length ? <span className="text-black/50">{(variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images?.length} assigned images</span> : null}
                           {variantFiles[variant.id]?.length ? <span className="text-[#2479a8]">{variantFiles[variant.id].length} pending upload</span> : null}
-                        </div>
-                      )}
-                      {variant.id && editing && isPersistedVariant(variant.id) && assigningVariantId === variant.id && (
-                        <div className="mt-3 rounded-lg border border-[#0b4166]/15 bg-white p-3" role="group" aria-label={`Choose shared gallery images for ${variant.name}`}>
-                          <p className="text-xs font-bold text-[#0b4166]">Choose images from {form.name || "this product"}&apos;s shared gallery</p>
-                          {gallery.length ? (
-                            <>
-                              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                                {gallery.map((image, imageIndex) => (
-                                  <label key={image.id} className="flex cursor-pointer items-start gap-2 rounded-lg border border-black/10 p-2 text-xs">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedGalleryImageIds.includes(image.id)}
-                                      onChange={(event) => setSelectedGalleryImageIds((current) => event.target.checked
-                                        ? [...current, image.id]
-                                        : current.filter((id) => id !== image.id))}
-                                      aria-label={`Assign product gallery image ${imageIndex + 1} to ${variant.name}`}
-                                    />
-                                    <span className="min-w-0 flex-1">
-                                      <span className="relative block aspect-square overflow-hidden rounded-md bg-[#eadfce]">
-                                        <SafeImage src={image.image_url} alt={image.alt_text || `Shared gallery image ${imageIndex + 1}`} fill className="object-cover" sizes="120px" />
-                                      </span>
-                                      <span className="mt-1 block truncate">{image.alt_text || `Image ${imageIndex + 1}`}</span>
-                                    </span>
-                                  </label>
-                                ))}
-                              </div>
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => saveExistingGallery(variant.id)}
-                                  disabled={savingGalleryAssignments}
-                                  className="rounded-lg bg-[#0b4166] px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
-                                >
-                                  {savingGalleryAssignments ? "Saving selection..." : "Save image selection"}
-                                </button>
-                                <button type="button" onClick={() => setAssigningVariantId(null)} disabled={savingGalleryAssignments} className="rounded-lg border px-3 py-2 text-xs font-bold">
-                                  Cancel
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-xs text-black/55">This product has no shared gallery images yet. Add images to the Product Gallery before assigning them.</p>
-                              <button type="button" onClick={() => setAssigningVariantId(null)} className="rounded-lg border px-3 py-2 text-xs font-bold">Close</button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {variant.id && editing && isPersistedVariant(variant.id) && (
-                        <div className="mt-3 rounded-lg bg-[#faf8f4] p-3">
-                          <p className="text-xs font-bold text-[#0b4166]">Assigned option images and available quantity</p>
-                          <p className="mt-1 text-xs text-black/55">Image availability is separate from this option&apos;s stock quantity.</p>
-                          {variant.images?.length ? (
-                            <>
-                              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                                {variant.images.map((image, imageIndex) => (
-                                  <div key={image.id} className="min-w-0 rounded-lg border border-black/10 bg-white p-2">
-                                    <div className="relative aspect-square overflow-hidden rounded-md bg-black/5">
-                                      <SafeImage
-                                        src={image.image_url}
-                                        alt={image.alt_text || `${variant.name} image ${imageIndex + 1}`}
-                                        fill
-                                        sizes="(max-width: 639px) 45vw, (max-width: 767px) 30vw, 20vw"
-                                        className="object-cover"
-                                      />
-                                    </div>
-                                    <label className="mt-2 block text-xs font-bold leading-tight text-[#0b4166]">
-                                      Available quantity
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        step="1"
-                                        aria-label={`Available quantity for image ${imageIndex + 1} in ${variant.name}`}
-                                        value={numericInputValue(image.available_quantity)}
-                                        onChange={(event) => setForm((current) => ({
-                                          ...current,
-                                          variants: (current.variants || []).map((item) => item.id === variant.id
-                                            ? {
-                                              ...item,
-                                              images: (item.images || []).map((assigned) => assigned.id === image.id
-                                                ? { ...assigned, available_quantity: event.target.value === "" ? Number.NaN : Number(event.target.value) }
-                                                : assigned),
-                                            }
-                                            : item),
-                                        }))}
-                                        className="mt-1 min-h-10 w-full rounded-lg border border-black/10 p-2 text-sm text-[#1d2930]"
-                                      />
-                                    </label>
-                                  </div>
-                                ))}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => saveVariantImageAvailability(variant)}
-                                disabled={savingVariantImages}
-                                className="mt-3 rounded-lg border border-[#0b4166]/20 px-3 py-2 text-xs font-bold text-[#0b4166] disabled:opacity-50"
-                              >
-                                {savingVariantImages ? "Saving image availability..." : "Save image availability"}
-                              </button>
-                            </>
-                          ) : (
-                            <p className="mt-2 text-xs text-black/55">No images are assigned to this option yet. Assign shared gallery images or upload option-specific images.</p>
-                          )}
                         </div>
                       )}
                     </div>
@@ -1073,7 +875,7 @@ const giftForOptions = Array.from(
 
                   <input
                     type="file"
-                    accept="image/png,image/jpeg,image/webp"
+                    accept="image/*"
                     onChange={(e) =>
                       e.target.files?.[0] &&
                       uploadImage(e.target.files[0])
@@ -1083,7 +885,7 @@ const giftForOptions = Array.from(
                   />
                   {uploading && <span className="text-xs font-semibold text-[#2479a8]">Uploading...</span>}
                 </span>
-                {(form.image_url || form.image) && <div className="mt-3 flex items-center gap-3 rounded-xl border border-black/10 bg-white p-2"><SafeImage src={form.image_url || form.image || ""} alt="Product preview" width={56} height={56} unoptimized className="h-14 w-14 rounded-lg object-cover" /><span className="min-w-0 truncate text-xs text-black/50">Image ready</span></div>}
+                {(form.image_url || form.image) && <div className="mt-3 flex items-center gap-3 rounded-xl border border-black/10 bg-white p-2"><Image src={form.image_url || form.image || ""} alt="Product preview" width={56} height={56} unoptimized className="h-14 w-14 rounded-lg object-cover" /><span className="min-w-0 truncate text-xs text-black/50">Image ready</span></div>}
               </label>
             </div>
 
@@ -1095,7 +897,7 @@ const giftForOptions = Array.from(
                 </div>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[#0b4166]/20 bg-[#f6f0e7] px-3 py-2 text-xs font-bold text-[#0b4166]">
                   <ImagePlus size={15} /> Add images
-                  <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" onChange={(event) => { stageGalleryFiles(event.target.files); event.target.value = ""; }} disabled={saving || galleryUploading} />
+                  <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => { stageGalleryFiles(event.target.files); event.target.value = ""; }} disabled={saving || galleryUploading} />
                 </label>
               </div>
 
@@ -1103,7 +905,7 @@ const giftForOptions = Array.from(
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {gallery.map((image, index) => (
                     <div key={image.id} className="group relative overflow-hidden rounded-xl border border-black/10 bg-[#f6f0e7]">
-                      <SafeImage src={image.image_url} alt={image.alt_text || `${form.name || "Product"} gallery image ${index + 1}`} width={180} height={135} unoptimized className="aspect-[4/3] w-full object-cover" loading="lazy" />
+                      <Image src={image.image_url} alt={image.alt_text || `${form.name || "Product"} gallery image ${index + 1}`} width={180} height={135} unoptimized className="aspect-[4/3] w-full object-cover" loading="lazy" />
                       <div className="absolute inset-x-1 bottom-1 flex items-center justify-between rounded-lg bg-black/65 p-1 text-white">
                         <button type="button" onClick={() => moveGalleryImage(index, -1)} disabled={index === 0} className="rounded p-1 disabled:opacity-30" aria-label="Move image earlier">â†</button>
                         <span className="text-[10px] font-bold">{index + 1}</span>
