@@ -158,18 +158,14 @@ export async function POST(
 
     try {
       /*
-       * Duplicate protection:
-       * The client keeps the same clientId when retrying a file.
-       * Therefore the generated Storage path stays identical.
-       *
-       * Check product_images first so a successful previous attempt
-       * does not create another database row.
+       * Option uploads remain canonical product_images records. The variant
+       * relationship is stored separately in product_variant_images.
        */
-      const imageTable = variant ? "product_variant_images" : "product_images";
+      const imageTable = "product_images";
       const imageQuery = service
         .from(imageTable)
         .select("id,image_url")
-        .eq(variant ? "variant_id" : "product_id", variant ? variant.id : productId)
+        .eq("product_id", productId)
         .eq("image_url", `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/trinity-media/${storagePath}`)
         .maybeSingle();
       const { data: existingImage, error: existingError } = await imageQuery;
@@ -179,6 +175,17 @@ export async function POST(
       }
 
       if (existingImage) {
+        if (variant) {
+          const { error: assignmentError } = await service
+            .from("product_variant_images")
+            .upsert({
+              variant_id: variant.id,
+              image_url: existingImage.image_url,
+              alt_text: file.name,
+              sort_order: item.stableIndex,
+            }, { onConflict: "variant_id,image_url" });
+          if (assignmentError) throw new Error(assignmentError.message);
+        }
         results.push({
           fileName: file.name,
           success: true,
@@ -210,7 +217,7 @@ export async function POST(
       const { data: imageRow, error: insertError } = await service
         .from(imageTable)
         .insert({
-          ...(variant ? { variant_id: variant.id } : { product_id: productId }),
+          product_id: productId,
           image_url: publicUrl,
           sort_order: item.stableIndex,
           alt_text: file.name,
@@ -224,6 +231,18 @@ export async function POST(
           .remove([storagePath]);
 
         throw new Error(insertError.message);
+      }
+
+      if (variant) {
+        const { error: assignmentError } = await service
+          .from("product_variant_images")
+          .upsert({
+            variant_id: variant.id,
+            image_url: publicUrl,
+            alt_text: file.name,
+            sort_order: item.stableIndex,
+          }, { onConflict: "variant_id,image_url" });
+        if (assignmentError) throw new Error(assignmentError.message);
       }
 
       results.push({
@@ -306,12 +325,16 @@ export async function PATCH(
         return NextResponse.json({ error: "One or more gallery images do not belong to this product." }, { status: 400 });
       }
       const { error: copyError } = await supabase.from("product_variant_images").upsert(
-        (sourceImages ?? []).map((image, index) => ({
+        body.images.map((image, index) => {
+          const source = (sourceImages ?? []).find((item) => item.id === (image as { id: string }).id);
+          if (!source) throw new Error("One or more gallery images do not belong to this product.");
+          return {
           variant_id: body.variantId,
-          image_url: image.image_url,
-          alt_text: image.alt_text,
+          image_url: source.image_url,
+          alt_text: source.alt_text,
           sort_order: index,
-        })),
+          };
+        }),
         { onConflict: "variant_id,image_url" },
       );
       if (copyError) return NextResponse.json({ error: copyError.message }, { status: 400 });

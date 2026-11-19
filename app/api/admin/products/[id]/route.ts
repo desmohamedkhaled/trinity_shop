@@ -48,17 +48,17 @@ function validateVariants(value: unknown) {
       id: typeof variant.id === 'string' ? variant.id : undefined,
       name,
       price: Number(variant.price),
-      stock: Number(variant.stock),
+      stock: undefined,
       length: dimension(variant.length),
       width: dimension(variant.width),
       height: dimension(variant.height),
       weight: dimension(variant.weight),
-      inventory_mode: variant.inventory_mode === "photo" ? "photo" : "traditional",
+      inventory_mode: undefined,
       sort_order: index,
     };
   });
-  if (variants.some((variant: any) => !Number.isFinite(variant.price) || variant.price < 0 || !Number.isInteger(variant.stock) || variant.stock < 0)) {
-    throw new Error('Each variant needs a valid non-negative price and stock quantity.');
+  if (variants.some((variant: any) => !Number.isFinite(variant.price) || variant.price < 0)) {
+    throw new Error('Each variant needs a valid non-negative price.');
   }
   return variants;
 }
@@ -71,7 +71,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const b = await req.json();
   const { id } = await params;
   let variants: any[] | null = null;
-  let existingVariants: { id: string }[] = [];
+  let existingVariants: { id: string; stock: number; inventory_mode: "traditional" | "photo" }[] = [];
   if (Array.isArray(b.variants)) {
     try {
       variants = validateVariants(b.variants);
@@ -79,7 +79,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid variants.' }, { status: 400 });
     }
     if (!variants) return NextResponse.json({ error: 'Invalid variants.' }, { status: 400 });
-    const existing = await supabase.from('product_variants').select('id').eq('product_id', id);
+    const existing = await supabase.from('product_variants').select('id, stock, inventory_mode').eq('product_id', id);
     if (existing.error) return NextResponse.json({ error: existing.error.message }, { status: 400 });
     existingVariants = existing.data ?? [];
     const retainedIds = variants.filter((variant: any) => variant.id).map((variant: any) => variant.id);
@@ -87,11 +87,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: 'One or more variants do not belong to this product.' }, { status: 400 });
     }
   }
-  const allowed = ['slug', 'name', 'description', 'meaning', 'price', 'category', 'stock', 'stock_status', 'inventory_mode', 'image_url', 'is_featured', 'is_published', 'occasion', 'gift_for', 'length', 'width', 'height', 'weight'];
+  const allowed = ['slug', 'name', 'description', 'meaning', 'price', 'category', 'image_url', 'is_featured', 'is_published', 'occasion', 'gift_for', 'length', 'width', 'height', 'weight'];
   const row: Record<string, any> = {};
 
   for (const k of allowed) {
-    if (b[k] !== undefined) row[k] = k === 'inventory_mode' ? (b[k] === 'photo' ? 'photo' : 'traditional') : ['price', 'stock'].includes(k) ? Number(b[k]) : ['length', 'width', 'height', 'weight'].includes(k) ? dimension(b[k]) : b[k];
+    if (b[k] !== undefined) row[k] = k === 'price' ? Number(b[k]) : ['length', 'width', 'height', 'weight'].includes(k) ? dimension(b[k]) : b[k];
   }
   if (row.slug !== undefined && (typeof row.slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(row.slug))) {
     return NextResponse.json({ error: 'Slug must use lowercase letters, numbers, and hyphens.' }, { status: 400 });
@@ -101,12 +101,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if (row.price !== undefined && (!Number.isFinite(row.price) || row.price < 0)) {
     return NextResponse.json({ error: 'Price must be a non-negative number.' }, { status: 400 });
-  }
-  if (row.stock !== undefined && (!Number.isInteger(row.stock) || row.stock < 0)) {
-    return NextResponse.json({ error: 'Stock must be a non-negative integer.' }, { status: 400 });
-  }
-  if (row.stock_status !== undefined && !['In stock', 'Out of stock'].includes(row.stock_status)) {
-    return NextResponse.json({ error: 'Stock status must be In stock or Out of stock.' }, { status: 400 });
   }
   if (['length', 'width', 'height', 'weight'].some((key) => row[key] === undefined && b[key] !== undefined)) {
     return NextResponse.json({ error: 'Dimensions must be non-negative numbers.' }, { status: 400 });
@@ -121,7 +115,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (shippingError) return NextResponse.json({ error: shippingError.message }, { status: 400 });
   }
   if (variants) {
-    variants = variants.map((variant) => ({ ...variant, product_id: id }));
+    variants = variants.map((variant) => {
+      const existing = existingVariants.find((item) => item.id === variant.id);
+      return {
+        ...variant,
+        product_id: id,
+        stock: existing?.stock ?? 0,
+        inventory_mode: existing?.inventory_mode ?? 'photo',
+      };
+    });
     const retainedIds = variants.filter((variant: any) => variant.id).map((variant: any) => variant.id);
     const removed = existingVariants.map((variant) => variant.id).filter((variantId) => !retainedIds.includes(variantId));
     if (removed.length) {

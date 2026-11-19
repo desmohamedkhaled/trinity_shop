@@ -41,7 +41,7 @@ section("Stripe variant reservation lifecycle is exactly once", () => {
 });
 
 section("variant edits preserve retained IDs and galleries", () => {
-  assert.match(adminProducts, /from\('product_variants'\)\.select\('id'\)/);
+  assert.match(adminProducts, /from\('product_variants'\)\.select\('id, stock, inventory_mode'\)/);
   assert.match(adminProducts, /upsert\(variant, \{ onConflict: 'id' \}\)/);
   assert.doesNotMatch(adminProducts, /product_variants'\)\.delete\(\)\.eq\('product_id', id\)/);
   assert.match(adminProducts, /product_variants: savedVariants/);
@@ -53,14 +53,17 @@ section("variant admin input is validated and scoped", () => {
   assert.match(adminProducts, /do not belong to this product/);
 });
 
-section("admin variant form exposes the mapped fields", () => {
-  for (const label of ["Size / Design Name", "L / Length", "W / Width", "H / Height", "Price (AUD)", "Stock / Quantity"]) {
+section("admin variant form separates master data from inventory", () => {
+  for (const label of ["Size / Design Name", "L / Length", "W / Width", "H / Height", "Price (AUD)"]) {
     assert.match(adminForm, new RegExp(label.replace(/[()\/]/g, "\\$&")));
   }
-  for (const field of ["length", "width", "height", "price", "stock"]) {
+  assert.doesNotMatch(adminForm, /Stock \/ Quantity/);
+  assert.doesNotMatch(adminForm, /Product inventory mode/);
+  for (const field of ["length", "width", "height", "price"]) {
     assert.match(adminProductsCreate, new RegExp(`variant\\.${field}`));
     assert.match(adminProducts, new RegExp(`variant\\.${field}`));
   }
+  assert.match(inventoryPage, /Save changes/);
 });
 
 section("product cards require option selection for variant products", () => {
@@ -90,6 +93,8 @@ section("admin image assignment is scoped and idempotent", () => {
   assert.match(imageRoute, /sourceImages \?\? \[\]\)\.length !== sourceIds\.length/);
   assert.match(imageRoute, /onConflict: "variant_id,image_url"/);
   assert.match(imageRoute, /variantId/);
+  assert.match(imageRoute, /const imageTable = "product_images"/);
+  assert.match(imageRoute, /The canonical gallery record is always product_images|Option uploads remain canonical product_images records/);
 });
 
 section("photo artwork visibility is enforced in the server catalog", () => {

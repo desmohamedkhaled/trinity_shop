@@ -132,7 +132,7 @@ const blank: Form = {
   price: 0,
   stock: 0,
   stock_status: "In stock",
-  inventory_mode: "traditional",
+  inventory_mode: "photo",
   variants: [],
   image_url: "",
   description: "",
@@ -358,6 +358,29 @@ export default function AdminProducts() {
       setError(data.error || `Could not upload images for ${variantId}.`);
       return false;
     }
+    const [galleryResponse, productResponse] = await Promise.all([
+      fetch(`/api/admin/products/${productId}/images`, { cache: "no-store" }),
+      fetch(`/api/admin/products`, { cache: "no-store" }),
+    ]);
+    if (galleryResponse.ok) {
+      const images = await galleryResponse.json();
+      if (Array.isArray(images)) setGallery(images.sort((a: ProductImage, b: ProductImage) => a.sort_order - b.sort_order));
+    }
+    if (productResponse.ok) {
+      const products = await productResponse.json();
+      if (Array.isArray(products)) {
+        const updated = products.find((item) => item.id === productId);
+        if (updated) setForm((current) => ({
+          ...current,
+          variants: (current.variants || []).map((variant) => variant.id === variantId
+            ? { ...variant, product_variant_images: Array.isArray(updated.product_variants)
+              ? updated.product_variants.find((item: ProductVariant) => item.id === variantId)?.product_variant_images ?? (variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images
+              : (variant as ProductVariant & { product_variant_images?: ProductImage[] }).product_variant_images }
+            : variant),
+        }));
+      }
+    }
+    setSuccess("Option gallery uploaded and synchronized.");
     return true;
   }
 
@@ -429,13 +452,11 @@ export default function AdminProducts() {
 
     const slug = slugify(form.slug || "");
     const price = Number(form.price);
-    const stock = Number(form.stock);
     const dimensions = [form.length, form.width, form.height, form.weight];
     if (!form.name?.trim()) return setError("Name is required.");
     if (!slug) return setError("Slug is required.");
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return setError("Slug must use lowercase letters, numbers, and hyphens.");
     if (!Number.isFinite(price) || price < 0) return setError("Price must be a valid non-negative number.");
-    if (!Number.isInteger(stock) || stock < 0) return setError("Stock must be a valid non-negative integer.");
     if (dimensions.some((value) => value !== null && value !== undefined && (!Number.isFinite(value) || value < 0))) return setError("Dimensions must be non-negative numbers.");
     const variants = form.variants || [];
     const variantNames = new Set<string>();
@@ -446,7 +467,6 @@ export default function AdminProducts() {
       if (variantNames.has(normalizedName)) return setError("Variant names must be unique.");
       variantNames.add(normalizedName);
       if (!Number.isFinite(Number(variant.price)) || Number(variant.price) < 0) return setError(`Price for ${name} must be a valid non-negative number.`);
-      if (!Number.isInteger(Number(variant.stock)) || Number(variant.stock) < 0) return setError(`Stock for ${name} must be a non-negative integer.`);
     }
 
     setSaving(true);
@@ -459,7 +479,6 @@ export default function AdminProducts() {
       form.slug === originalProduct.slug &&
       form.category === originalProduct.category &&
       Number(form.price) === Number(originalProduct.price) &&
-      Number(form.stock) === Number(originalProduct.stock) &&
       form.description === originalProduct.description &&
        form.meaning === originalProduct.meaning &&
        form.length === (originalProduct.length ?? null) &&
@@ -479,9 +498,6 @@ export default function AdminProducts() {
       ...form,
       slug,
       price,
-      stock,
-      stock_status: form.stock_status || "In stock",
-      inventory_mode: form.inventory_mode || "traditional",
       variants: (form.variants || []).map(({ id, ...variant }) =>
         (originalProduct?.product_variants || []).some((saved: ProductVariant) => saved.id === id)
           ? { id, ...variant }
@@ -787,40 +803,11 @@ const giftForOptions = Array.from(
                 />
               </label>
 
-              <label className="text-sm font-bold">
-                Stock
-                <input
-                  type="number"
-                  min="0"
-                  value={form.stock ?? 0}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      stock: Number(e.target.value),
-                    })
-                  }
-                  required
-                  className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
-                />
-              </label>
-              <label className="text-sm font-bold">
-                Stock status
-                <select value={form.stock_status || "In stock"} onChange={(e) => setForm({ ...form, stock_status: e.target.value as "In stock" | "Out of stock" })} className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3">
-                  <option>In stock</option>
-                  <option>Out of stock</option>
-                </select>
-              </label>
-              <label className="text-sm font-bold">
-                Product inventory mode
-                <select value={form.inventory_mode || "traditional"} onChange={(e) => setForm({ ...form, inventory_mode: e.target.value as "traditional" | "photo" })} className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3">
-                  <option value="traditional">Traditional stock</option>
-                  <option value="photo">Photo-level artwork stock</option>
-                </select>
-              </label>
+              <p className="text-sm text-black/55 sm:col-span-2">Stock allocation is managed in Visual Inventory after the product is saved.</p>
               <div className="sm:col-span-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold">Sizes / designs</span>
-                  <button type="button" onClick={() => setForm({ ...form, variants: [...(form.variants || []), { id: crypto.randomUUID(), product_id: editing || "", name: "", length: null, width: null, height: null, weight: null, price: Number(form.price) || 0, stock: 0 }] })} className="rounded-lg border px-3 py-2 text-xs font-bold">Add option</button>
+                  <button type="button" onClick={() => setForm({ ...form, variants: [...(form.variants || []), { id: crypto.randomUUID(), product_id: editing || "", name: "", length: null, width: null, height: null, weight: null, price: Number(form.price) || 0, stock: 0, inventory_mode: "photo" }] })} className="rounded-lg border px-3 py-2 text-xs font-bold">Add option</button>
                 </div>
                 <div className="mt-3 grid gap-3">
                   {(form.variants || []).map((variant, index) => (
@@ -852,17 +839,6 @@ const giftForOptions = Array.from(
                         <label className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
                           Price (AUD)
                           <input aria-label={`Option ${index + 1} price`} type="number" min="0" step="0.01" value={numericInputValue(variant.price)} onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, price: e.target.value === "" ? Number.NaN : Number(e.target.value) } : item) })} className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]" />
-                        </label>
-                        <label className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
-                          Stock / Quantity
-                          <input aria-label={`Option ${index + 1} stock`} type="number" min="0" step="1" value={numericInputValue(variant.stock)} onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, stock: e.target.value === "" ? Number.NaN : Number(e.target.value) } : item) })} className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]" />
-                        </label>
-                        <label className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
-                          Inventory mode
-                          <select value={variant.inventory_mode || "traditional"} onChange={(e) => setForm({ ...form, variants: (form.variants || []).map((item, itemIndex) => itemIndex === index ? { ...item, inventory_mode: e.target.value as "traditional" | "photo" } : item) })} className="mt-1 min-h-10 w-full rounded-lg border p-2 text-sm text-[#1d2930]">
-                            <option value="traditional">Traditional</option>
-                            <option value="photo">Photo-level</option>
-                          </select>
                         </label>
                         <button type="button" onClick={() => { if (window.confirm(`Remove ${variant.name || `option ${index + 1}`}? This will remove its gallery assignment when saved.`)) setForm({ ...form, variants: (form.variants || []).filter((_, itemIndex) => itemIndex !== index) }); }} className="rounded-lg p-2 text-red-700" aria-label={`Remove option ${index + 1}`}><Trash2 size={16} /></button>
                       </div>

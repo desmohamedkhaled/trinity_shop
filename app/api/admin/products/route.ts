@@ -49,17 +49,17 @@ function validateVariants(value: unknown) {
       id: typeof variant.id === 'string' ? variant.id : undefined,
       name,
       price: Number(variant.price),
-      stock: Number(variant.stock),
+      stock: 0,
       length: dimension(variant.length),
       width: dimension(variant.width),
       height: dimension(variant.height),
       weight: dimension(variant.weight),
-      inventory_mode: variant.inventory_mode === "photo" ? "photo" : "traditional",
+      inventory_mode: "photo",
       sort_order: index,
     };
   });
-  if (variants.some((variant: any) => !Number.isFinite(variant.price) || variant.price < 0 || !Number.isInteger(variant.stock) || variant.stock < 0)) {
-    throw new Error('Each variant needs a valid non-negative price and stock quantity.');
+  if (variants.some((variant: any) => !Number.isFinite(variant.price) || variant.price < 0)) {
+    throw new Error('Each variant needs a valid non-negative price.');
   }
   return variants;
 }
@@ -96,7 +96,7 @@ export async function POST(req: Request) {
   }
   console.info('[Gallery] Product payload parsed');
   const price = Number(b.price);
-  const stock = Number(b.stock);
+  const stock = 0;
   const dimensions = {
     length: dimension(b.length),
     width: dimension(b.width),
@@ -106,8 +106,8 @@ export async function POST(req: Request) {
   if (typeof b.name !== 'string' || !b.name.trim() || typeof b.slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(b.slug)) {
     return NextResponse.json({ error: 'Name and a valid lowercase slug are required.' }, { status: 400 });
   }
-  if (!Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
-    return NextResponse.json({ error: 'Price and stock must be valid non-negative numbers.' }, { status: 400 });
+  if (!Number.isFinite(price) || price < 0) {
+    return NextResponse.json({ error: 'Price must be a valid non-negative number.' }, { status: 400 });
   }
   if (b.stock_status !== undefined && !['In stock', 'Out of stock'].includes(b.stock_status)) {
     return NextResponse.json({ error: 'Stock status must be In stock or Out of stock.' }, { status: 400 });
@@ -126,8 +126,8 @@ export async function POST(req: Request) {
     price,
     category: b.category || null,
     stock,
-    stock_status: b.stock_status === 'Out of stock' ? 'Out of stock' : 'In stock',
-    inventory_mode: b.inventory_mode === 'photo' ? 'photo' : 'traditional',
+    stock_status: 'In stock',
+    inventory_mode: 'photo',
     image_url: b.image_url || null,
     is_featured: Boolean(b.is_featured),
     is_published: b.is_published !== false,
