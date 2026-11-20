@@ -3,38 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Check, ChevronDown, ImagePlus, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
-import type { Product, ProductImage, ProductShippingLocation, ProductVariant } from "@/lib/data";
+import type { Product, ProductImage, ProductVariant } from "@/lib/data";
 import { formatAUD } from "@/lib/currency";
 
-type Form = Partial<Product> & {
-  stock?: number;
+type EditableVariant = Omit<ProductVariant, "stock" | "inventory_mode">;
+type Form = Omit<Partial<Product>, "stock" | "stock_status" | "inventory_mode" | "variants"> & {
   image_url?: string;
   is_published?: boolean;
-  stock_status?: "In stock" | "Out of stock";
-  inventory_mode?: "traditional" | "photo";
-  variants?: ProductVariant[];
+  variants?: EditableVariant[];
 };
 
 type SelectOption = { value: string; label: string };
-
-const shippingStates = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
-
-function emptyShippingLocations(): ProductShippingLocation[] {
-  return shippingStates.map((state) => ({ state, suburb: "", metro: "" }));
-}
-
-function normalizedShippingLocations(locations: unknown): ProductShippingLocation[] {
-  const byState = new Map(
-    Array.isArray(locations)
-      ? locations.filter((location): location is ProductShippingLocation => Boolean(location && typeof location === "object" && shippingStates.includes((location as ProductShippingLocation).state)))
-        .map((location) => [location.state, location])
-      : [],
-  );
-  return shippingStates.map((state) => {
-    const location = byState.get(state);
-    return { state, suburb: location?.suburb || "", metro: location?.metro || "" };
-  });
-}
 
 function MultiSelect({
   label,
@@ -130,9 +109,6 @@ const blank: Form = {
   slug: "",
   category: "",
   price: 0,
-  stock: 0,
-  stock_status: "In stock",
-  inventory_mode: "photo",
   variants: [],
   image_url: "",
   description: "",
@@ -145,7 +121,6 @@ const blank: Form = {
   width: null,
   height: null,
   weight: null,
-  product_shipping_locations: emptyShippingLocations(),
 };
 
 export default function AdminProducts() {
@@ -215,8 +190,12 @@ export default function AdminProducts() {
     setOriginalProduct(p);
     setSlugManuallyEdited(true);
 
+    const masterData = { ...p };
+    delete masterData.stock;
+    delete masterData.stock_status;
+    delete masterData.inventory_mode;
     setForm({
-      ...p,
+      ...masterData,
       image_url: p.image_url || p.image || "",
       image: p.image_url || p.image || "",
       featured: Boolean(p.is_featured ?? p.featured),
@@ -227,10 +206,7 @@ export default function AdminProducts() {
       width: p.width ?? null,
       height: p.height ?? null,
       weight: p.weight ?? null,
-      stock_status: p.stock_status === "Out of stock" ? "Out of stock" : "In stock",
-      inventory_mode: p.inventory_mode === "photo" ? "photo" : "traditional",
-      variants: Array.isArray(p.product_variants) ? p.product_variants : [],
-      product_shipping_locations: normalizedShippingLocations(p.product_shipping_locations),
+      variants: Array.isArray(p.product_variants) ? p.product_variants.map(({ stock: _variantStock, inventory_mode: _variantMode, ...variant }: ProductVariant) => variant) : [],
     });
     setGallery(Array.isArray(p.product_images) ? [...p.product_images].sort((a, b) => a.sort_order - b.sort_order) : []);
     setGalleryFiles([]);
@@ -402,6 +378,7 @@ export default function AdminProducts() {
         ...current,
         variants: (current.variants || []).map((variant) => variant.id === variantId ? { ...variant, product_variant_images: data.assigned } : variant),
       }));
+      setSelectedGalleryIds([]);
       setSuccess("Existing product images assigned to the selected option.");
     }
   }
@@ -485,7 +462,6 @@ export default function AdminProducts() {
        form.width === (originalProduct.width ?? null) &&
        form.height === (originalProduct.height ?? null) &&
        form.weight === (originalProduct.weight ?? null) &&
-       JSON.stringify(normalizedShippingLocations(form.product_shipping_locations)) === JSON.stringify(normalizedShippingLocations(originalProduct.product_shipping_locations)) &&
       JSON.stringify(form.occasion || []) === JSON.stringify(originalProduct.occasion || []) &&
       JSON.stringify(form.giftFor || []) === JSON.stringify(originalProduct.gift_for || originalProduct.giftFor || []) &&
       Boolean(form.featured) === Boolean(originalProduct.is_featured ?? originalProduct.featured) &&
@@ -493,7 +469,7 @@ export default function AdminProducts() {
     );
 
     const payload = statusOnlyUpdate
-      ? { is_published: form.is_published !== false, product_shipping_locations: normalizedShippingLocations(form.product_shipping_locations) }
+      ? { is_published: form.is_published !== false }
       : {
       ...form,
       slug,
@@ -507,8 +483,7 @@ export default function AdminProducts() {
       is_published: form.is_published !== false,
       gift_for: form.giftFor || [],
       occasion: form.occasion || [],
-       image_url: form.image_url || form.image || "",
-       product_shipping_locations: normalizedShippingLocations(form.product_shipping_locations),
+      image_url: form.image_url || form.image || "",
        };
 
     let productTimeout: number | undefined;
@@ -774,6 +749,25 @@ const giftForOptions = Array.from(
               </label>
 
               <label className="text-sm font-bold">
+                SKU
+                <input
+                  value={form.sku || ""}
+                  onChange={(event) => setForm({ ...form, sku: event.target.value })}
+                  className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
+                />
+              </label>
+
+              <label className="text-sm font-bold">
+                Arabic title
+                <input
+                  dir="rtl"
+                  value={form.arabic_title || ""}
+                  onChange={(event) => setForm({ ...form, arabic_title: event.target.value })}
+                  className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
+                />
+              </label>
+
+              <label className="text-sm font-bold">
                 Category
                 <input
                   value={form.category || ""}
@@ -807,7 +801,7 @@ const giftForOptions = Array.from(
               <div className="sm:col-span-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold">Sizes / designs</span>
-                  <button type="button" onClick={() => setForm({ ...form, variants: [...(form.variants || []), { id: crypto.randomUUID(), product_id: editing || "", name: "", length: null, width: null, height: null, weight: null, price: Number(form.price) || 0, stock: 0, inventory_mode: "photo" }] })} className="rounded-lg border px-3 py-2 text-xs font-bold">Add option</button>
+                  <button type="button" onClick={() => setForm({ ...form, variants: [...(form.variants || []), { id: crypto.randomUUID(), product_id: editing || "", name: "", length: null, width: null, height: null, weight: null, price: Number(form.price) || 0 }] })} className="rounded-lg border px-3 py-2 text-xs font-bold">Add option</button>
                 </div>
                 <div className="mt-3 grid gap-3">
                   {(form.variants || []).map((variant, index) => (
@@ -821,7 +815,7 @@ const giftForOptions = Array.from(
                           ["length", "L / Length", "any"],
                           ["width", "W / Width", "any"],
                           ["height", "H / Height", "any"],
-                          ["weight", "Weight (optional)", "any"],
+                          ["weight", "Weight (grams)", "any"],
                         ] as const).map(([field, label, step]) => (
                           <label key={field} className="min-w-0 text-xs font-bold leading-tight text-[#0b4166]">
                             {label}
@@ -978,7 +972,7 @@ const giftForOptions = Array.from(
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                 {(["length", "width", "height", "weight"] as const).map((dimension) => (
                   <label key={dimension} className="min-w-0 text-sm font-bold">
-                    {dimension === "length" ? "L" : dimension === "width" ? "W" : dimension === "height" ? "H" : "Weight"}
+                    {dimension === "length" ? "L" : dimension === "width" ? "W" : dimension === "height" ? "H" : "Weight (grams)"}
                     <input
                       type="number"
                       min="0"
@@ -991,29 +985,6 @@ const giftForOptions = Array.from(
                 ))}
               </div>
 
-              <div className="mt-5 space-y-3">
-                {normalizedShippingLocations(form.product_shipping_locations).map((location) => (
-                  <div key={location.state} className="grid grid-cols-1 gap-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_minmax(0,1fr)] sm:items-end">
-                    <span className="pb-3 text-sm font-black text-[#0b4166]">{location.state}</span>
-                    <label className="min-w-0 text-sm font-bold">
-                      SUBURB
-                      <input
-                        value={location.suburb}
-                        onChange={(event) => setForm({ ...form, product_shipping_locations: normalizedShippingLocations(form.product_shipping_locations).map((item) => item.state === location.state ? { ...item, suburb: event.target.value } : item) })}
-                        className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
-                      />
-                    </label>
-                    <label className="min-w-0 text-sm font-bold">
-                      METRO
-                      <input
-                        value={location.metro}
-                        onChange={(event) => setForm({ ...form, product_shipping_locations: normalizedShippingLocations(form.product_shipping_locations).map((item) => item.state === location.state ? { ...item, metro: event.target.value } : item) })}
-                        className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
-                      />
-                    </label>
-                  </div>
-                ))}
-              </div>
             </div>
 
             <div className="mt-5 grid gap-3 text-sm font-semibold sm:grid-cols-2">

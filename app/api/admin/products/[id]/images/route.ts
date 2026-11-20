@@ -314,16 +314,18 @@ export async function PATCH(
     if (sourceIds.length !== body.images.length) {
       return NextResponse.json({ error: "Each assigned gallery image must have a valid product image ID." }, { status: 400 });
     }
-    if (sourceIds.length) {
-      const { data: sourceImages, error: sourceError } = await supabase
-        .from("product_images")
-        .select("id,image_url,alt_text,sort_order")
-        .eq("product_id", productId)
-        .in("id", sourceIds);
-      if (sourceError) return NextResponse.json({ error: sourceError.message }, { status: 400 });
-      if ((sourceImages ?? []).length !== sourceIds.length) {
-        return NextResponse.json({ error: "One or more gallery images do not belong to this product." }, { status: 400 });
-      }
+    const { data: productImages, error: productImagesError } = await supabase
+      .from("product_images")
+      .select("id,image_url,alt_text,sort_order")
+      .eq("product_id", productId);
+    if (productImagesError) return NextResponse.json({ error: productImagesError.message }, { status: 400 });
+
+    const sourceImages = (productImages ?? []).filter((image) => sourceIds.includes(image.id));
+    if (sourceImages.length !== sourceIds.length) {
+      return NextResponse.json({ error: "One or more gallery images do not belong to this product." }, { status: 400 });
+    }
+
+    if (sourceImages.length) {
       const { error: copyError } = await supabase.from("product_variant_images").upsert(
         body.images.map((image, index) => {
           const source = (sourceImages ?? []).find((item) => item.id === (image as { id: string }).id);
@@ -338,6 +340,28 @@ export async function PATCH(
         { onConflict: "variant_id,image_url" },
       );
       if (copyError) return NextResponse.json({ error: copyError.message }, { status: 400 });
+    }
+
+    const selectedUrls = new Set(sourceImages.map((source) => source.image_url));
+    const canonicalUrls = new Set((productImages ?? []).map((image) => image.image_url));
+    const { data: existingAssignments, error: existingAssignmentError } = await supabase
+      .from("product_variant_images")
+      .select("id,image_url")
+      .eq("variant_id", body.variantId);
+    if (existingAssignmentError) return NextResponse.json({ error: existingAssignmentError.message }, { status: 400 });
+
+    // URL-only legacy assignments are not stale merely because they are absent
+    // from the canonical product gallery. Remove only canonical assignments
+    // explicitly omitted from the current selection.
+    const staleIds = (existingAssignments ?? [])
+      .filter((assignment) => canonicalUrls.has(assignment.image_url) && !selectedUrls.has(assignment.image_url))
+      .map((assignment) => assignment.id);
+    if (staleIds.length) {
+      const { error: staleDeleteError } = await supabase
+        .from("product_variant_images")
+        .delete()
+        .in("id", staleIds);
+      if (staleDeleteError) return NextResponse.json({ error: staleDeleteError.message }, { status: 400 });
     }
     const { data: assigned, error: assignedError } = await supabase
       .from("product_variant_images")
@@ -434,7 +458,22 @@ export async function DELETE(
       .eq("variant_id", variantId)
       .maybeSingle();
     if (assignedError || !assigned) {
-      return NextResponse.json({ error: assignedError?.message || "Assigned image not found." }, { status: 404 });
+      const { data: canonical, error: canonicalError } = await service
+        .from("product_images")
+        .select("id,image_url")
+        .eq("id", imageId)
+        .eq("product_id", productId)
+        .maybeSingle();
+      if (canonicalError || !canonical) {
+        return NextResponse.json({ error: canonicalError?.message || "Assigned image not found." }, { status: 404 });
+      }
+      const { error: canonicalUnassignError } = await service
+        .from("product_variant_images")
+        .delete()
+        .eq("variant_id", variantId)
+        .eq("image_url", canonical.image_url);
+      if (canonicalUnassignError) return NextResponse.json({ error: canonicalUnassignError.message }, { status: 400 });
+      return NextResponse.json({ ok: true });
     }
     const { error: deleteAssignmentError } = await service
       .from("product_variant_images")
@@ -485,7 +524,14 @@ export async function DELETE(
 
     const markerIndex = image.image_url.indexOf(publicMarker);
 
-    if (markerIndex !== -1) {
+    const { data: remainingAssignments, error: remainingAssignmentsError } = await service
+      .from("product_variant_images")
+      .select("id")
+      .eq("image_url", image.image_url)
+      .limit(1);
+    if (remainingAssignmentsError) throw new Error(remainingAssignmentsError.message);
+
+    if (markerIndex !== -1 && !(remainingAssignments ?? []).length) {
       const storagePath = decodeURIComponent(
         image.image_url.slice(markerIndex + publicMarker.length)
       );

@@ -1,24 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requirePermission } from '@/lib/admin';
 
-const shippingStates = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'] as const;
-
-function shippingLocations(value: unknown, productId: string) {
-  if (!Array.isArray(value)) return null;
-
-  const locations = new Map<string, { suburb: string; metro: string }>();
-  for (const location of value) {
-    if (!location || typeof location !== 'object' || !shippingStates.includes((location as { state?: string }).state as typeof shippingStates[number])) {
-      return null;
-    }
-    const { state, suburb, metro } = location as { state: string; suburb?: unknown; metro?: unknown };
-    if (typeof suburb !== 'string' || typeof metro !== 'string') return null;
-    locations.set(state, { suburb, metro });
-  }
-
-  return shippingStates.map((state) => ({ product_id: productId, state, ...(locations.get(state) ?? { suburb: '', metro: '' }), updated_at: new Date().toISOString() }));
-}
-
 function dimension(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number(value);
@@ -69,9 +51,9 @@ export async function GET() {
   if (access.response) return access.response;
   const { supabase } = access;
 
-  let { data, error } = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_shipping_locations(id, product_id, state, suburb, metro), product_variants(id, product_id, name, price, stock, length, width, height, weight, sort_order, inventory_mode, product_variant_images(id, variant_id, image_url, alt_text, sort_order, available_quantity, low_stock_threshold))').order('created_at', { ascending: false });
+  let { data, error } = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_variants(id, product_id, name, price, stock, length, width, height, weight, sort_order, inventory_mode, product_variant_images(id, variant_id, image_url, alt_text, sort_order, available_quantity, low_stock_threshold))').order('created_at', { ascending: false });
   if (error?.code === 'PGRST200') {
-    const fallback = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_shipping_locations(id, product_id, state, suburb, metro)').order('created_at', { ascending: false });
+    const fallback = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order)').order('created_at', { ascending: false });
     data = fallback.data;
     error = fallback.error;
   }
@@ -115,12 +97,11 @@ export async function POST(req: Request) {
   if (Object.values(dimensions).some((value) => value === undefined)) {
     return NextResponse.json({ error: 'Dimensions must be non-negative numbers.' }, { status: 400 });
   }
-  if (!shippingLocations(b.product_shipping_locations, '')) {
-    return NextResponse.json({ error: 'Shipping locations must contain valid states with text suburb and metro values.' }, { status: 400 });
-  }
   const row = {
     slug: b.slug.trim(),
     name: b.name.trim(),
+    sku: typeof b.sku === 'string' && b.sku.trim() ? b.sku.trim() : null,
+    arabic_title: typeof b.arabic_title === 'string' && b.arabic_title.trim() ? b.arabic_title.trim() : null,
     description: b.description || null,
     meaning: b.meaning || null,
     price,
@@ -138,10 +119,6 @@ export async function POST(req: Request) {
 
   const { data, error } = await supabase.from('products').insert(row).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  const locations = shippingLocations(b.product_shipping_locations, data.id);
-  if (!locations) return NextResponse.json({ error: 'Shipping locations must contain valid states with text suburb and metro values.' }, { status: 400 });
-  const { error: shippingError } = await supabase.from('product_shipping_locations').upsert(locations, { onConflict: 'product_id,state' });
-  if (shippingError) return NextResponse.json({ error: shippingError.message }, { status: 400 });
   if (variants && variants.length > 0) {
     const productVariants = variants.map((variant: any) => ({
       product_id: data.id,
@@ -153,6 +130,7 @@ export async function POST(req: Request) {
       width: variant.width,
       height: variant.height,
       weight: variant.weight,
+      inventory_mode: variant.inventory_mode,
       sort_order: variant.sort_order,
     }));
     const { error: variantError } = await supabase.from('product_variants').insert(productVariants);

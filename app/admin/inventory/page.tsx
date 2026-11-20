@@ -1,12 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Artwork = { id: string; image_url: string; alt_text?: string | null; available_quantity: number; low_stock_threshold: number; sort_order: number };
 type ProductImage = { id: string; image_url: string; alt_text?: string | null; sort_order: number };
 type Variant = { id: string; name: string; stock: number; inventory_mode: "traditional" | "photo"; product_variant_images?: Artwork[] };
-type InventoryProduct = { id: string; name: string; slug: string; category?: string; occasion?: string[]; image_url?: string; stock: number; inventory_mode: "traditional" | "photo"; product_images?: ProductImage[]; product_variants?: Variant[] };
+type InventoryProduct = { id: string; name: string; sku?: string; slug: string; category?: string; occasion?: string[]; image_url?: string; stock: number; inventory_mode: "traditional" | "photo"; product_images?: ProductImage[]; product_variants?: Variant[] };
 type Change = { imageId?: string; productId?: string; value: number; expectedValue: number };
 
 export default function InventoryPage() {
@@ -18,11 +18,14 @@ export default function InventoryPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [occasion, setOccasion] = useState("all");
-  const [category, setCategory] = useState("all");
   const [search, setSearch] = useState("");
   const [staged, setStaged] = useState<Record<string, number>>({});
+  const catalogRef = useRef<HTMLElement>(null);
+  const workspaceRef = useRef<HTMLElement>(null);
 
   async function load() {
+    const catalogScrollTop = catalogRef.current?.scrollTop ?? 0;
+    const workspaceScrollTop = workspaceRef.current?.scrollTop ?? 0;
     setLoading(true);
     try {
       const response = await fetch("/api/admin/inventory", { cache: "no-store" });
@@ -32,6 +35,10 @@ export default function InventoryPage() {
       setProducts(next);
       setSelectedId((current) => current && next.some((item: InventoryProduct) => item.id === current) ? current : next[0]?.id || "");
       setStaged({});
+      requestAnimationFrame(() => {
+        if (catalogRef.current) catalogRef.current.scrollTop = catalogScrollTop;
+        if (workspaceRef.current) workspaceRef.current.scrollTop = workspaceScrollTop;
+      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load inventory");
     } finally {
@@ -44,10 +51,9 @@ export default function InventoryPage() {
   const filteredProducts = useMemo(() => products.filter((item) => {
     const query = search.trim().toLocaleLowerCase();
     return (occasion === "all" || item.occasion?.includes(occasion)) &&
-      (category === "all" || item.category === category) &&
-      (!query || `${item.name} ${item.slug}`.toLocaleLowerCase().includes(query));
-  }), [category, occasion, products, search]);
-  const product = products.find((item) => item.id === selectedId) ?? filteredProducts[0];
+      (!query || `${item.name} ${item.slug} ${item.sku || ""}`.toLocaleLowerCase().includes(query));
+  }), [occasion, products, search]);
+  const product = filteredProducts.find((item) => item.id === selectedId) ?? filteredProducts[0];
   const variants = useMemo(() => product?.product_variants ?? [], [product]);
   const variant = variants.find((item) => item.id === variantId) ?? variants[0];
   const artworks = useMemo(() => [...(variant?.product_variant_images ?? [])].sort((a, b) => {
@@ -70,7 +76,10 @@ export default function InventoryPage() {
     return next;
   }, [products, staged]);
   const occasions = Array.from(new Set(products.flatMap((item) => item.occasion ?? []))).sort();
-  const categories = Array.from(new Set(products.map((item) => item.category).filter((value): value is string => Boolean(value)))).sort();
+
+  useEffect(() => {
+    if (product && product.id !== selectedId) setSelectedId(product.id);
+  }, [product, selectedId]);
 
   useEffect(() => {
     if (product && !variants.some((item) => item.id === variantId)) setVariantId(variants[0]?.id || "");
@@ -122,31 +131,31 @@ export default function InventoryPage() {
   return <div className="min-h-full p-4 md:p-8">
     <h1 className="text-4xl font-black">Visual inventory</h1>
     <p className="mt-2 text-sm text-black/50">Stage photo-level stock changes locally, then save them together.</p>
-    <div className="sticky top-0 z-10 mt-6 grid gap-3 rounded-2xl border border-black/10 bg-[#fffaf3]/95 p-3 shadow-sm backdrop-blur md:grid-cols-[1fr_180px_180px_auto]">
-      <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title or SKU" aria-label="Search title or SKU" className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm" />
+    <div className="sticky top-0 z-10 mt-6 grid gap-3 rounded-2xl border border-black/10 bg-[#fffaf3]/95 p-3 shadow-sm backdrop-blur md:grid-cols-[minmax(0,1fr)_180px_auto_auto]">
+      <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title, SKU or keyword" aria-label="Search title, SKU or keyword" className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm" />
       <select value={occasion} onChange={(event) => setOccasion(event.target.value)} aria-label="Filter by occasion" className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"><option value="all">All occasions</option>{occasions.map((item) => <option key={item}>{item}</option>)}<option value="Coming Soon">Coming Soon</option></select>
-      <select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filter by category" className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"><option value="all">All categories</option>{categories.map((item) => <option key={item}>{item}</option>)}</select>
       <span className="self-center text-sm text-black/55">{filteredProducts.length} products</span>
+      <button type="button" onClick={() => void load()} disabled={loading || saving} className="rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50">Refresh</button>
     </div>
     {error && <p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
     {message && <p className="mt-5 rounded-xl bg-green-50 p-4 text-sm text-green-700">{message}</p>}
     <div className="mt-6 grid min-h-0 gap-6 lg:grid-cols-[minmax(18rem,380px)_minmax(0,1fr)]">
-      <section className="max-h-[calc(100vh-15rem)] space-y-3 overflow-y-auto pr-1">
+      <section ref={catalogRef} className="max-h-[calc(100vh-15rem)] space-y-3 overflow-y-auto pr-1">
         {loading ? <p>Loading inventory...</p> : filteredProducts.length === 0 ? <p className="rounded-2xl border border-dashed p-6 text-sm text-black/50">No products match these filters.</p> : filteredProducts.map((item) => <button key={item.id} onClick={() => { setSelectedId(item.id); setVariantId(""); }} className={`flex w-full items-center gap-3 rounded-2xl border-2 p-3 text-left transition ${item.id === product?.id ? "border-[#b48d55] bg-[#fffaf3]" : "border-black/10 bg-white"}`}>
           <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-[#eadfce]">{item.image_url ? <Image src={item.image_url} alt="" fill className="object-cover" sizes="64px" /> : <span className="grid h-full place-items-center text-xs text-black/40">No image</span>}</div>
           <span className="min-w-0 flex-1"><strong className="block truncate">{item.name}</strong><small className="block truncate text-black/50">{item.slug} · {item.category || "Product"}</small>{item.occasion?.[0] && <small className="text-[#b48d55]">{item.occasion[0]}</small>}</span><b>{item.stock}</b>
         </button>)}
       </section>
-      <section className="max-h-[calc(100vh-15rem)] overflow-y-auto rounded-2xl border border-black/10 bg-white p-4 md:p-5">
+      <section ref={workspaceRef} className="max-h-[calc(100vh-15rem)] overflow-y-auto rounded-2xl border border-black/10 bg-white p-4 md:p-5">
         {!product ? <p className="text-black/50">Choose a product to view its sizes.</p> : <>
-          <div className="flex items-start justify-between gap-4"><div><p className="text-sm text-black/50">{product.slug}</p><h2 className="text-2xl font-black">{product.name}</h2><p className="mt-1 text-sm text-black/55">Total stock: {product.stock} · {product.occasion?.join(", ") || "No occasion"}</p></div><span className="rounded-full bg-[#f3eee6] px-3 py-1 text-xs font-bold">{product.inventory_mode}</span></div>
+          <div className="flex items-start justify-between gap-4"><div><p className="text-sm text-black/50">{product.sku ? `SKU ${product.sku} · ` : ""}{product.slug}</p><h2 className="text-2xl font-black">{product.name}</h2><p className="mt-1 text-sm text-black/55">Total stock: {product.stock} · {product.occasion?.join(", ") || "No occasion"}</p></div></div>
           {variants.length > 0 && <div className="mt-5 flex flex-wrap gap-2">{variants.map((item) => <button key={item.id} onClick={() => setVariantId(item.id)} className={`rounded-full px-4 py-2 text-sm font-bold ${item.id === variant?.id ? "bg-[#083b68] text-white" : "bg-[#f3eee6]"}`}>{item.name} ({item.stock})</button>)}</div>}
           {variants.length === 0 ? (() => {
             const image = product.product_images?.[0];
             const key = `product:${product.id}`;
             const value = staged[key] ?? product.stock;
             return <div className="mt-5"><h3 className="text-xl font-black">Product artwork</h3><div className="mt-4 max-w-xs rounded-xl border border-black/10 p-3"><div className="relative aspect-square overflow-hidden rounded-lg bg-[#eadfce]">{image || product.image_url ? <Image src={image?.image_url || product.image_url || ""} alt={image?.alt_text || product.name} fill className="object-cover" sizes="300px" /> : null}</div><p className="mt-2 truncate text-xs text-black/55">{image?.alt_text || product.name}</p><div className="mt-2 flex items-center justify-between gap-2"><button type="button" onClick={() => stage(key, Math.max(0, value - 1))} className="h-8 w-8 rounded-lg border" aria-label="Decrease stock">-</button><input type="number" min="0" value={value} onChange={(event) => stage(key, Number(event.target.value))} className="w-full rounded-lg border px-2 py-1 text-center font-bold" aria-label="Product stock" /><button type="button" onClick={() => stage(key, value + 1)} className="h-8 w-8 rounded-lg border" aria-label="Increase stock">+</button></div></div></div>;
-          })() : variant?.inventory_mode === "photo" ? <><div className="mt-5 flex items-center justify-between"><h3 className="text-xl font-black">{variant.name} artwork</h3><button onClick={quickSet} disabled={saving || !artworks.length} className="rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50">Quick set all</button></div>{artworks.length ? <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">{artworks.map((image) => { const value = staged[image.id] ?? image.available_quantity; return <div key={image.id} className="rounded-xl border border-black/10 p-2"><div className="relative aspect-square overflow-hidden rounded-lg bg-[#eadfce]"><Image src={image.image_url} alt={image.alt_text || "Artwork"} fill className="object-cover" sizes="180px" /></div><p className="mt-2 truncate text-xs text-black/55">{image.alt_text || "Artwork"}</p><div className="mt-2 flex items-center justify-between gap-2"><button type="button" onClick={() => stage(image.id, Math.max(0, value - 1))} className="h-8 w-8 rounded-lg border" aria-label="Decrease stock">-</button><input type="number" min="0" value={value} onChange={(event) => stage(image.id, Number(event.target.value))} className="w-full rounded-lg border px-2 py-1 text-center font-bold" aria-label="Artwork stock" /><button type="button" onClick={() => stage(image.id, value + 1)} className="h-8 w-8 rounded-lg border" aria-label="Increase stock">+</button></div><span className={`mt-2 block text-center text-xs font-bold ${value > 0 && value <= 4 ? "text-amber-700" : value === 0 ? "text-black/40" : "text-green-700"}`}>{value === 0 ? "Zero stock" : value <= 4 ? "Low stock" : "In stock"}</span></div>; })}</div> : <p className="mt-6 text-sm text-black/60">No artwork is assigned to this size.</p>}</> : <p className="mt-6 text-sm text-black/60">Traditional inventory: {variant?.stock ?? product.stock} units. Artwork controls are unavailable until this record is explicitly photo inventory.</p>}
+          })() : <><div className="mt-5 flex items-center justify-between"><h3 className="text-xl font-black">{variant.name} artwork</h3><button onClick={quickSet} disabled={saving || !artworks.length} className="rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50">Quick set all</button></div>{artworks.length ? <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">{artworks.map((image) => { const value = staged[image.id] ?? image.available_quantity; return <div key={image.id} className="rounded-xl border border-black/10 p-2"><div className="relative aspect-square overflow-hidden rounded-lg bg-[#eadfce]"><Image src={image.image_url} alt={image.alt_text || "Artwork"} fill className="object-cover" sizes="180px" /></div><p className="mt-2 truncate text-xs text-black/55">{image.alt_text || "Artwork"}</p><div className="mt-2 flex items-center justify-between gap-2"><button type="button" onClick={() => stage(image.id, Math.max(0, value - 1))} className="h-8 w-8 rounded-lg border" aria-label="Decrease stock">-</button><input type="number" min="0" value={value} onChange={(event) => stage(image.id, Number(event.target.value))} className="w-full rounded-lg border px-2 py-1 text-center font-bold" aria-label="Artwork stock" /><button type="button" onClick={() => stage(image.id, value + 1)} className="h-8 w-8 rounded-lg border" aria-label="Increase stock">+</button></div><span className={`mt-2 block text-center text-xs font-bold ${value > 0 && value <= 4 ? "text-amber-700" : value === 0 ? "text-black/40" : "text-green-700"}`}>{value === 0 ? "Zero stock" : value <= 4 ? "Low stock" : "In stock"}</span></div>; })}</div> : <p className="mt-6 text-sm text-black/60">No artwork is assigned to this size.</p>}</>}
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4"><span className="text-sm font-bold">{changes.length ? `${changes.length} unsaved change${changes.length === 1 ? "" : "s"}` : "All changes saved"}</span><button onClick={() => void save()} disabled={!changes.length || saving} className="rounded-xl bg-[#b48d55] px-5 py-3 text-sm font-bold text-white disabled:opacity-50">{saving ? "Saving..." : "Save changes"}</button></div>
         </>}
       </section>

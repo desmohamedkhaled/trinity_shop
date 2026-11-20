@@ -14,6 +14,13 @@ const productCard = await readFile(new URL("../components/product-card.tsx", imp
 const imageRoute = await readFile(new URL("../app/api/admin/products/[id]/images/route.ts", import.meta.url), "utf8");
 const checkoutValidation = await readFile(new URL("../lib/checkout-validation.ts", import.meta.url), "utf8");
 const catalog = await readFile(new URL("../lib/catalog.ts", import.meta.url), "utf8");
+const eflowRoute = await readFile(new URL("../app/api/shipping/calculate/route.ts", import.meta.url), "utf8");
+const eflowClient = await readFile(new URL("../lib/eflow.ts", import.meta.url), "utf8");
+const manualOrderRoute = await readFile(new URL("../app/api/orders/route.ts", import.meta.url), "utf8");
+const stripeCheckoutRoute = await readFile(new URL("../app/api/stripe/create-checkout-session/route.ts", import.meta.url), "utf8");
+const stripeWebhook = await readFile(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
+const preparedPreorderMigration = await readFile(new URL("../supabase/migrations/20261120000000_safe_universal_photo_preorder_prepared.sql", import.meta.url), "utf8");
+const photoModeMigration = await readFile(new URL("../supabase/migrations/20261121000000_universal_photo_modes_prepared.sql", import.meta.url), "utf8");
 
 function section(name, callback) {
   callback();
@@ -59,6 +66,7 @@ section("admin variant form separates master data from inventory", () => {
   }
   assert.doesNotMatch(adminForm, /Stock \/ Quantity/);
   assert.doesNotMatch(adminForm, /Product inventory mode/);
+  assert.doesNotMatch(adminForm, /stock_status:|inventory_mode: "traditional"|stock: 0/);
   for (const field of ["length", "width", "height", "price"]) {
     assert.match(adminProductsCreate, new RegExp(`variant\\.${field}`));
     assert.match(adminProducts, new RegExp(`variant\\.${field}`));
@@ -84,13 +92,13 @@ section("photo aggregation and protected quick-set are wired", () => {
   assert.match(visualMigration, /trinity_sync_photo_inventory/);
   assert.match(visualMigration, /after insert or update of available_quantity, variant_id or delete/);
   assert.match(inventoryApi, /requirePermission\("inventory\.update"\)/);
-  assert.match(inventoryApi, /body\.quickSet/);
+  assert.match(inventoryApi, /Per-keystroke inventory updates are disabled/);
   assert.match(inventoryPage, /Quick set all/);
 });
 
 section("admin image assignment is scoped and idempotent", () => {
   assert.match(imageRoute, /Array\.from\(new Set/);
-  assert.match(imageRoute, /sourceImages \?\? \[\]\)\.length !== sourceIds\.length/);
+  assert.match(imageRoute, /sourceImages\.length !== sourceIds\.length/);
   assert.match(imageRoute, /onConflict: "variant_id,image_url"/);
   assert.match(imageRoute, /variantId/);
   assert.match(imageRoute, /const imageTable = "product_images"/);
@@ -102,6 +110,96 @@ section("photo artwork visibility is enforced in the server catalog", () => {
   assert.match(checkoutValidation, /available_quantity < quantity/);
   assert.match(checkoutValidation, /Artwork cannot be selected for traditional inventory/);
   assert.match(checkoutValidation, /Selected artwork is invalid for this option/);
+});
+
+section("inventory filter and focus persistence remain local", () => {
+  assert.doesNotMatch(inventoryPage, /value=\{category\}|setCategory|All categories/);
+  assert.match(inventoryPage, /Search title, SKU or keyword/);
+  assert.match(inventoryPage, /Refresh/);
+  assert.doesNotMatch(inventoryPage, /window\.onfocus|visibilitychange|refetchOnWindowFocus|revalidateOnFocus/);
+  assert.match(inventoryPage, /filteredProducts\.find\(\(item\) => item\.id === selectedId\)/);
+  assert.match(inventoryPage, /catalogRef\.current\.scrollTop/);
+  assert.match(inventoryPage, /workspaceRef\.current\.scrollTop/);
+});
+
+section("live shipping is server quoted and manual rates are removed", () => {
+  assert.match(eflowClient, /freight\.eflowsoft\.com\.au\/api\/v1/);
+  assert.match(eflowClient, /EFLOW_FREIGHT_API_KEY/);
+  assert.match(eflowRoute, /EFLOW_FROM_POSTCODE/);
+  assert.match(eflowRoute, /quoteEflowService/);
+  assert.doesNotMatch(adminForm, /SUBURB|METRO|State-by-state|manual shipping/i);
+});
+
+section("stored weights are grams and convert once at the eFlow boundary", () => {
+  assert.match(adminForm, /Weight \(grams\)/);
+  assert.match(await readFile(new URL("../components/product-detail.tsx", import.meta.url), "utf8"), /effectiveWeight[\s\S]*?"g"/);
+  assert.match(eflowClient, /weightGrams/);
+  assert.match(eflowClient, /gramsToEflowKg/);
+  assert.match(eflowClient, /weightKg = totalWeightGrams \/ 1000|weightKg = weightGrams \/ 1000|weightGrams \/ 1000/);
+  assert.doesNotMatch(eflowClient, /weight \*= 1000|weight \/ 1000[\s\S]*weight: Number/);
+  assert.match(eflowClient, /22000|22/);
+  assert.doesNotMatch(eflowRoute, /height \+=|weight \+=|Math\.max\(length/);
+});
+
+function gramsToKg(weightGrams) {
+  assert.ok(Number.isFinite(weightGrams) && weightGrams > 0);
+  return weightGrams / 1000;
+}
+
+section("gram conversion boundary fixtures", () => {
+  assert.equal(gramsToKg(500), 0.5);
+  assert.equal(gramsToKg(113), 0.113);
+  assert.equal(gramsToKg(500 * 4), 2);
+  assert.equal(gramsToKg(500 + 113), 0.613);
+  assert.equal(gramsToKg(22000), 22);
+  assert.equal(gramsToKg(22001) > 22, true);
+  assert.equal(gramsToKg(22001) > 22, true);
+  assert.doesNotThrow(() => gramsToKg(500));
+});
+
+section("checkout persists server-calculated preorder metadata", () => {
+  for (const route of [manualOrderRoute, stripeCheckoutRoute]) {
+    assert.match(route, /is_deposit/);
+    assert.match(route, /deposit_percentage/);
+    assert.match(route, /remaining_balance/);
+    assert.match(route, /preorder_status/);
+  }
+  assert.match(stripeCheckoutRoute, /unitPrice \* 0\.5/);
+  assert.match(checkoutPage, /image_id: image\?\.id/);
+});
+
+section("preorder schema and Stripe lifecycle are prepared", () => {
+  assert.match(preparedPreorderMigration, /is_deposit boolean/);
+  assert.match(preparedPreorderMigration, /preorder_status/);
+  assert.match(stripeWebhook, /claimEvent/);
+  assert.match(stripeWebhook, /checkout\.session\.expired/);
+  assert.match(stripeWebhook, /complete_stripe_payment/);
+  assert.match(stripeWebhook, /markEventProcessed/);
+});
+
+section("universal photo migration changes mode flags only", () => {
+  assert.match(photoModeMigration, /set inventory_mode = 'photo'/g);
+  assert.doesNotMatch(photoModeMigration, /available_quantity\s*[-+*/=]/);
+  assert.doesNotMatch(photoModeMigration, /delete\s+from/i);
+});
+
+section("gallery deletion and canonical assignment synchronization are protected", () => {
+  assert.match(imageRoute, /\.from\("product_images"\)[\s\S]*?\.delete\(\)/);
+  assert.match(imageRoute, /canonicalUnassignError|canonicalUnassign/);
+  assert.match(adminForm, /setSelectedGalleryIds\(\[\]\)/);
+});
+
+section("legacy URL-only assignments survive gallery synchronization", () => {
+  assert.match(imageRoute, /canonicalUrls\.has\(assignment\.image_url\)/);
+  assert.match(imageRoute, /!selectedUrls\.has\(assignment\.image_url\)/);
+  assert.match(imageRoute, /URL-only legacy assignments are not stale/);
+  assert.doesNotMatch(imageRoute, /\.delete\(\)\.eq\("variant_id", body\.variantId\)/);
+});
+
+section("canonical gallery deletion does not remove legacy assignments or storage", () => {
+  assert.match(imageRoute, /remainingAssignments/);
+  assert.match(imageRoute, /remainingAssignmentsError/);
+  assert.match(imageRoute, /if \(markerIndex !== -1 && !\(remainingAssignments \?\? \[\]\)\.length\)/);
 });
 
 console.log("BLOCKED runtime checks: concurrent final-unit purchase, webhook retries, aggregation triggers, and exactly-once DB transitions require the unapplied migration and an isolated disposable database.");

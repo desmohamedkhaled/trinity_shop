@@ -2,11 +2,11 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { isComingSoonProduct, type Product, type ProductImage, type ProductVariant } from "@/lib/data";
 
-export type CartLine = { product: Product; variant?: ProductVariant; image?: ProductImage };
+export type CartLine = { product: Product; variant?: ProductVariant; image?: ProductImage; is_deposit?: boolean; deposit_percentage?: number; remaining_balance?: number };
 type StoreContextType = {
   cart: CartLine[];
   cartQuantities: Record<string, number>;
-  addToCart: (p: Product, variant?: ProductVariant, image?: ProductImage) => void;
+  addToCart: (p: Product, variant?: ProductVariant, image?: ProductImage, preorder?: { is_deposit: boolean; deposit_percentage: number; remaining_balance: number }) => void;
   removeFromCart: (id: string) => void;
   setCartQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
@@ -41,7 +41,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     const stored = readStoredValue<(Product | CartLine)[]>("trinity-cart", []);
-    setCart(stored.map((item) => "product" in item ? item as CartLine : { product: item as Product }).filter((item) => !isComingSoonProduct(item.product)));
+    setCart(stored.map((item) => "product" in item ? item as CartLine : { product: item as Product }));
     setCartQuantities(readStoredValue<Record<string, number>>("trinity-cart-quantities", {}));
     setGiftList(readStoredValue<Product[]>("trinity-gift-list", []));
     setQuantities(readStoredValue<Record<string, number>>("trinity-gift-quantities", {}));
@@ -56,10 +56,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [cart, cartQuantities, giftList, hydrated, quantities]);
 
   const lineId = (p: Product, variant?: ProductVariant, image?: ProductImage) => `${p.id}:${variant?.id || "default"}:${image?.id || "default"}`;
-  const addToCart = (p: Product, variant?: ProductVariant, image?: ProductImage) => {
-    if (isComingSoonProduct(p)) return;
+  const addToCart = (p: Product, variant?: ProductVariant, image?: ProductImage, preorder?: { is_deposit: boolean; deposit_percentage: number; remaining_balance: number }) => {
     const id = lineId(p, variant, image);
-    setCart((items) => items.some((item) => lineId(item.product, item.variant, item.image) === id) ? items : [...items, { product: p, variant, image }]);
+    setCart((items) => items.some((item) => lineId(item.product, item.variant, item.image) === id) ? items : [...items, { product: p, variant, image, ...preorder }]);
     setCartQuantities((items) => ({ ...items, [id]: items[id] || 1 }));
   };
   const removeFromCart = (id: string) => { setCart((items) => items.filter((item) => lineId(item.product, item.variant, item.image) !== id)); setCartQuantities((items) => { const next = { ...items }; delete next[id]; return next; }); };

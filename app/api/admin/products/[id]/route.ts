@@ -1,22 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requirePermission } from '@/lib/admin';
 
-const shippingStates = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'] as const;
-
-function shippingLocations(value: unknown, productId: string) {
-  if (!Array.isArray(value)) return null;
-
-  const locations = new Map<string, { suburb: string; metro: string }>();
-  for (const location of value) {
-    if (!location || typeof location !== 'object' || !shippingStates.includes((location as { state?: string }).state as typeof shippingStates[number])) return null;
-    const { state, suburb, metro } = location as { state: string; suburb?: unknown; metro?: unknown };
-    if (typeof suburb !== 'string' || typeof metro !== 'string') return null;
-    locations.set(state, { suburb, metro });
-  }
-
-  return shippingStates.map((state) => ({ product_id: productId, state, ...(locations.get(state) ?? { suburb: '', metro: '' }), updated_at: new Date().toISOString() }));
-}
-
 function dimension(value: unknown) {
   if (value === null || value === '') return null;
   const parsed = Number(value);
@@ -87,7 +71,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: 'One or more variants do not belong to this product.' }, { status: 400 });
     }
   }
-  const allowed = ['slug', 'name', 'description', 'meaning', 'price', 'category', 'image_url', 'is_featured', 'is_published', 'occasion', 'gift_for', 'length', 'width', 'height', 'weight'];
+  const allowed = ['slug', 'name', 'sku', 'arabic_title', 'description', 'meaning', 'price', 'category', 'image_url', 'is_featured', 'is_published', 'occasion', 'gift_for', 'length', 'width', 'height', 'weight'];
   const row: Record<string, any> = {};
 
   for (const k of allowed) {
@@ -108,12 +92,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const { data, error } = await supabase.from('products').update(row).eq('id', id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  if (b.product_shipping_locations !== undefined) {
-    const locations = shippingLocations(b.product_shipping_locations, id);
-    if (!locations) return NextResponse.json({ error: 'Shipping locations must contain valid states with text suburb and metro values.' }, { status: 400 });
-    const { error: shippingError } = await supabase.from('product_shipping_locations').upsert(locations, { onConflict: 'product_id,state' });
-    if (shippingError) return NextResponse.json({ error: shippingError.message }, { status: 400 });
-  }
   if (variants) {
     variants = variants.map((variant) => {
       const existing = existingVariants.find((item) => item.id === variant.id);

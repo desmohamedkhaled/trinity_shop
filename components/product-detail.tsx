@@ -28,11 +28,16 @@ export function ProductDetail({ product }: { product: Product }) {
     ? product.variants.every((item) => item.stock <= 0)
     : (product.stock ?? 0) <= 0;
   const comingSoon = isComingSoonProduct(product);
+  const effectiveWeight = variant?.weight != null && Number(variant.weight) > 0
+    ? variant.weight
+    : product.weight != null && Number(product.weight) > 0
+      ? product.weight
+      : null;
   const dimensions = [
     ["Length", valueWithUnit(displayProduct.length, "cm")],
     ["Width", valueWithUnit(displayProduct.width, "cm")],
     ["Height", valueWithUnit(displayProduct.height, "cm")],
-    ["Weight", valueWithUnit(displayProduct.weight, "kg")],
+    ["Weight", valueWithUnit(effectiveWeight, "g")],
   ].filter(([, value]) => value);
 
   return (

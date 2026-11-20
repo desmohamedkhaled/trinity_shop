@@ -2,6 +2,8 @@ export type Product = {
   id: string;
   slug: string;
   name: string;
+  sku?: string | null;
+  arabic_title?: string | null;
   category: string;
   occasion: string[];
   giftFor: string[];
@@ -20,6 +22,9 @@ export type Product = {
   stock_status?: "In stock" | "Out of stock";
   inventory_mode?: "traditional" | "photo";
   variants?: ProductVariant[];
+  is_deposit?: boolean;
+  deposit_percentage?: number;
+  remaining_balance?: number;
 };
 
 export function isComingSoonProduct(product: Pick<Product, "category" | "occasion">) {
