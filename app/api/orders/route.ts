@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { serviceSupabase } from "@/lib/admin";
 import { validateCheckoutItems } from "@/lib/checkout-validation";
 import { calculateParcel, quoteEflowService } from "@/lib/eflow";
+import { resolveServerPreorders } from "@/lib/preorder";
 
 export async function POST(request: Request) {
   const supabase = serviceSupabase();
@@ -20,6 +21,8 @@ export async function POST(request: Request) {
   }
   const validationError = await validateCheckoutItems(supabase, items);
   if (validationError) return NextResponse.json({ error: validationError }, { status: 409 });
+  const preorderResolution = await resolveServerPreorders(supabase, items);
+  if ("error" in preorderResolution) return NextResponse.json({ error: preorderResolution.error }, { status: 422 });
 
   const parcelResult = await calculateParcel(supabase, items.map((item) => ({ id: String(item.id), variant_id: item.variant_id, quantity: Number(item.quantity) })));
   if ("error" in parcelResult) return NextResponse.json({ error: parcelResult.error }, { status: 422 });
@@ -39,14 +42,13 @@ export async function POST(request: Request) {
   const subtotal = Number(order.subtotal || 0);
   const orderItems = Array.isArray(data.items) ? data.items as { id?: string; unit_price?: number; quantity?: number }[] : [];
   const depositItems = orderItems.map((orderItem, index) => {
-    const item = items[index];
-    const unitPrice = Number(orderItem.unit_price);
-    const isDeposit = item?.is_deposit === true;
+    const preorder = preorderResolution.items[index];
+    const isDeposit = preorder?.is_deposit === true;
     return {
       id: orderItem.id,
       is_deposit: isDeposit,
-      deposit_percentage: isDeposit ? 50 : 0,
-      remaining_balance: isDeposit ? Math.round((unitPrice * 0.5) * Number(orderItem.quantity || item?.quantity || 0) * 100) / 100 : 0,
+      deposit_percentage: preorder?.deposit_percentage ?? 0,
+      remaining_balance: preorder?.remaining_balance ?? 0,
     };
   }).filter((item): item is { id: string; is_deposit: boolean; deposit_percentage: number; remaining_balance: number } => typeof item.id === "string");
   if (depositItems.length) {
@@ -60,6 +62,8 @@ export async function POST(request: Request) {
     const { error: preorderError } = await supabase.from("orders").update({
       preorder_status: "deposit_pending",
       balance_payment_status: "pending",
+      payment_status: "pending",
+      status: "pending",
       updated_at: new Date().toISOString(),
     }).eq("id", order.id);
     if (preorderError) return NextResponse.json({ error: "Unable to persist the preorder status." }, { status: 500 });

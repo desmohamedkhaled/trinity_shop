@@ -203,6 +203,24 @@ export async function POST(request: Request) {
         return NextResponse.json({ received: true, pending: true }, { status: 200 });
       }
 
+      const balanceOrderId = object.metadata?.balance_order_id ?? null;
+      if (balanceOrderId) {
+        const { error: balanceUpdateError } = await supabase
+          .from("orders")
+          .update({
+            preorder_status: "balance_paid",
+            balance_payment_status: "paid",
+            balance_paid_at: new Date().toISOString(),
+            balance_payment_token_hash: null,
+            balance_payment_token_expires_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", balanceOrderId);
+        if (balanceUpdateError) throw balanceUpdateError;
+        await markEventProcessed(supabase, event.id);
+        return NextResponse.json({ received: true, balancePaid: true }, { status: 200 });
+      }
+
       const orderId = object.metadata?.order_id ?? null;
       const sessionId = object.id ?? null;
       const paymentIntentId = typeof object.payment_intent === "string" ? object.payment_intent : object.payment_intent?.id ?? null;
@@ -215,12 +233,54 @@ export async function POST(request: Request) {
         payment_intent_id: paymentIntentId,
       });
       if (error) throw error;
+      const { data: depositItems, error: depositLookupError } = await supabase
+        .from("order_items")
+        .select("id")
+        .eq("order_id", order.id)
+        .eq("is_deposit", true);
+      if (depositLookupError) throw depositLookupError;
+      if ((depositItems ?? []).length) {
+        const depositItemIds = (depositItems ?? []).map((item) => item.id);
+        const { error: depositPaidError } = await supabase
+          .from("order_items")
+          .update({ deposit_paid_at: new Date().toISOString() })
+          .in("id", depositItemIds);
+        if (depositPaidError) throw depositPaidError;
+        const { error: preorderPaidError } = await supabase
+          .from("orders")
+          .update({
+            preorder_status: "deposit_paid",
+            balance_payment_status: "pending",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", order.id);
+        if (preorderPaidError) throw preorderPaidError;
+      }
     } else if (type === "checkout.session.expired" || type === "checkout.session.async_payment_failed") {
       const orderId = object.metadata?.order_id ?? null;
       const sessionId = object.id ?? null;
       const paymentIntentId = typeof object.payment_intent === "string" ? object.payment_intent : object.payment_intent?.id ?? null;
       const order = await findOrderByStripeContext(supabase, { orderId, sessionId, paymentIntentId });
-      if (order) await releaseIfCheckoutClosed(supabase, order);
+      if (order) {
+        const released = await releaseIfCheckoutClosed(supabase, order);
+        if (released) {
+          const { data: depositItems } = await supabase
+            .from("order_items")
+            .select("id")
+            .eq("order_id", order.id)
+            .eq("is_deposit", true);
+          if ((depositItems ?? []).length) {
+            await supabase
+              .from("orders")
+              .update({
+                preorder_status: "cancelled",
+                balance_payment_status: "cancelled",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", order.id);
+          }
+        }
+      }
     } else if (type === "payment_intent.payment_failed") {
       const paymentIntentId = data.object.id;
       const paymentIntentMetadata = (data.object as { metadata?: Record<string, string | undefined> }).metadata;

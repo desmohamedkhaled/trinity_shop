@@ -21,6 +21,14 @@ const stripeCheckoutRoute = await readFile(new URL("../app/api/stripe/create-che
 const stripeWebhook = await readFile(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
 const preparedPreorderMigration = await readFile(new URL("../supabase/migrations/20261120000000_safe_universal_photo_preorder_prepared.sql", import.meta.url), "utf8");
 const photoModeMigration = await readFile(new URL("../supabase/migrations/20261121000000_universal_photo_modes_prepared.sql", import.meta.url), "utf8");
+const productDetail = await readFile(new URL("../components/product-detail.tsx", import.meta.url), "utf8");
+const batchInventoryRoute = await readFile(new URL("../app/api/admin/inventory/batch-update/route.ts", import.meta.url), "utf8");
+const inventoryPageForTests = await readFile(new URL("../app/admin/inventory/page.tsx", import.meta.url), "utf8");
+const preorderHelper = await readFile(new URL("../lib/preorder.ts", import.meta.url), "utf8");
+const balanceLinkRoute = await readFile(new URL("../app/api/admin/orders/[id]/balance-link/route.ts", import.meta.url), "utf8");
+const balanceStripeRoute = await readFile(new URL("../app/api/stripe/balance-checkout-session/route.ts", import.meta.url), "utf8");
+const catalogForTests = await readFile(new URL("../lib/catalog.ts", import.meta.url), "utf8");
+const inventoryAdminForTests = await readFile(new URL("../app/api/admin/inventory/route.ts", import.meta.url), "utf8");
 
 function section(name, callback) {
   callback();
@@ -110,6 +118,9 @@ section("photo artwork visibility is enforced in the server catalog", () => {
   assert.match(checkoutValidation, /available_quantity < quantity/);
   assert.match(checkoutValidation, /Artwork cannot be selected for traditional inventory/);
   assert.match(checkoutValidation, /Selected artwork is invalid for this option/);
+  assert.match(catalogForTests, /inventory_mode: "photo"/);
+  assert.match(inventoryAdminForTests, /inventory_mode: "photo"/);
+  assert.match(checkoutValidation, /Boolean\(variant\)/);
 });
 
 section("inventory filter and focus persistence remain local", () => {
@@ -125,25 +136,37 @@ section("inventory filter and focus persistence remain local", () => {
 section("live shipping is server quoted and manual rates are removed", () => {
   assert.match(eflowClient, /freight\.eflowsoft\.com\.au\/api\/v1/);
   assert.match(eflowClient, /EFLOW_FREIGHT_API_KEY/);
-  assert.match(eflowRoute, /EFLOW_FROM_POSTCODE/);
+  assert.match(eflowClient, /EFLOW_FROM_POSTCODE/);
   assert.match(eflowRoute, /quoteEflowService/);
   assert.doesNotMatch(adminForm, /SUBURB|METRO|State-by-state|manual shipping/i);
 });
 
 section("stored weights are grams and convert once at the eFlow boundary", () => {
   assert.match(adminForm, /Weight \(grams\)/);
-  assert.match(await readFile(new URL("../components/product-detail.tsx", import.meta.url), "utf8"), /effectiveWeight[\s\S]*?"g"/);
+  assert.match(productDetail, /effectiveWeight[\s\S]*?"g"/);
   assert.match(eflowClient, /weightGrams/);
   assert.match(eflowClient, /gramsToEflowKg/);
   assert.match(eflowClient, /weightKg = totalWeightGrams \/ 1000|weightKg = weightGrams \/ 1000|weightGrams \/ 1000/);
   assert.doesNotMatch(eflowClient, /weight \*= 1000|weight \/ 1000[\s\S]*weight: Number/);
   assert.match(eflowClient, /22000|22/);
+  assert.doesNotMatch(eflowClient, /items\.length !== 1|item\.quantity !== 1/);
+  assert.match(eflowClient, /totalWeightGrams \+= weightGrams \* item\.quantity/);
   assert.doesNotMatch(eflowRoute, /height \+=|weight \+=|Math\.max\(length/);
 });
 
 function gramsToKg(weightGrams) {
   assert.ok(Number.isFinite(weightGrams) && weightGrams > 0);
   return weightGrams / 1000;
+}
+
+function positiveWeight(weightGrams) {
+  return typeof weightGrams === "number" && Number.isFinite(weightGrams) && weightGrams > 0
+    ? weightGrams
+    : null;
+}
+
+function weightWithVariantFallback(variantWeight, productWeight) {
+  return positiveWeight(variantWeight) ?? positiveWeight(productWeight);
 }
 
 section("gram conversion boundary fixtures", () => {
@@ -153,8 +176,41 @@ section("gram conversion boundary fixtures", () => {
   assert.equal(gramsToKg(500 + 113), 0.613);
   assert.equal(gramsToKg(22000), 22);
   assert.equal(gramsToKg(22001) > 22, true);
-  assert.equal(gramsToKg(22001) > 22, true);
   assert.doesNotThrow(() => gramsToKg(500));
+  assert.equal(positiveWeight(undefined), null);
+  assert.equal(positiveWeight(null), null);
+  assert.equal(positiveWeight(0), null);
+  assert.equal(positiveWeight(-1), null);
+  assert.equal(positiveWeight(Number.NaN), null);
+  assert.equal(weightWithVariantFallback(500, 113), 500);
+  assert.equal(weightWithVariantFallback(null, 113), 113);
+  assert.equal(weightWithVariantFallback(0, null), null);
+});
+
+section("batch inventory exposes one explicit batch endpoint", () => {
+  assert.match(batchInventoryRoute, /admin_batch_update_inventory/);
+  assert.match(batchInventoryRoute, /p_changes/);
+  assert.match(inventoryPageForTests, /\/api\/admin\/inventory\/batch-update/);
+  assert.match(inventoryPageForTests, /async function load\(clearStaged = false\)/);
+  assert.match(inventoryPageForTests, /if \(clearStaged\) setStaged\(\{\}\)/);
+});
+
+section("preorder prices and payment choices are server authoritative", () => {
+  assert.match(preorderHelper, /deposit_percentage: isDeposit \? 50 : 0/);
+  assert.match(preorderHelper, /depositAmount = isDeposit \? Math\.round\(unitPrice \* 50\) \/ 100/);
+  assert.match(preorderHelper, /remainingBalance = isDeposit/);
+  assert.match(preorderHelper, /A 50% deposit is available only for Coming Soon products/);
+  assert.match(stripeCheckoutRoute, /resolveServerPreorders/);
+  assert.match(manualOrderRoute, /resolveServerPreorders/);
+});
+
+section("remaining balance link and checkout are prepared safely", () => {
+  assert.match(balanceLinkRoute, /stock_received/);
+  assert.match(balanceLinkRoute, /balance_payment_token_hash/);
+  assert.match(balanceLinkRoute, /7 \* 24 \* 60 \* 60 \* 1000/);
+  assert.match(balanceStripeRoute, /balancePayment|balance_order_id|remaining_balance/);
+  assert.match(stripeWebhook, /balance_order_id/);
+  assert.match(stripeWebhook, /balance_payment_status: "paid"/);
 });
 
 section("checkout persists server-calculated preorder metadata", () => {
@@ -164,7 +220,7 @@ section("checkout persists server-calculated preorder metadata", () => {
     assert.match(route, /remaining_balance/);
     assert.match(route, /preorder_status/);
   }
-  assert.match(stripeCheckoutRoute, /unitPrice \* 0\.5/);
+  assert.match(stripeCheckoutRoute, /deposit_amount/);
   assert.match(checkoutPage, /image_id: image\?\.id/);
 });
 

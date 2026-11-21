@@ -23,7 +23,7 @@ export default function InventoryPage() {
   const catalogRef = useRef<HTMLElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
 
-  async function load() {
+  async function load(clearStaged = false) {
     const catalogScrollTop = catalogRef.current?.scrollTop ?? 0;
     const workspaceScrollTop = workspaceRef.current?.scrollTop ?? 0;
     setLoading(true);
@@ -34,7 +34,7 @@ export default function InventoryPage() {
       const next = Array.isArray(data) ? data : [];
       setProducts(next);
       setSelectedId((current) => current && next.some((item: InventoryProduct) => item.id === current) ? current : next[0]?.id || "");
-      setStaged({});
+      if (clearStaged) setStaged({});
       requestAnimationFrame(() => {
         if (catalogRef.current) catalogRef.current.scrollTop = catalogScrollTop;
         if (workspaceRef.current) workspaceRef.current.scrollTop = workspaceScrollTop;
@@ -101,7 +101,7 @@ export default function InventoryPage() {
     setError("");
     setMessage("");
     try {
-      const response = await fetch("/api/admin/inventory", {
+      const response = await fetch("/api/admin/inventory/batch-update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ changes }),
@@ -109,7 +109,7 @@ export default function InventoryPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not save inventory changes");
       setMessage(`${data.updated} inventory change${data.updated === 1 ? "" : "s"} saved.`);
-      await load();
+      await load(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not save inventory changes");
     } finally {

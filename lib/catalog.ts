@@ -40,7 +40,7 @@ export async function getProducts(): Promise<Product[]> {
       variantsByProduct = new Map<string, any[]>();
       for (const variant of variantRows ?? []) {
         const list = variantsByProduct.get(variant.product_id) ?? [];
-        list.push({ ...variant, images: (variant.product_variant_images ?? []).filter((image: any) => image.available_quantity > 0) });
+        list.push({ ...variant, inventory_mode: "photo", images: (variant.product_variant_images ?? []).filter((image: any) => image.available_quantity > 0) });
         variantsByProduct.set(variant.product_id, list);
       }
     } else if (!["42P01", "PGRST200", "PGRST205"].includes(variantError.code || "")) {
@@ -49,6 +49,7 @@ export async function getProducts(): Promise<Product[]> {
 
     return (data ?? []).map((p: any) => ({
       ...p,
+      inventory_mode: "photo",
       image: p.image_url || p.image || "",
       featured: Boolean(p.is_featured),
       stock_status: p.stock_status === "Out of stock" ? "Out of stock" : "In stock",
@@ -115,13 +116,14 @@ export async function getProduct(slug: string): Promise<Product | null> {
       .eq("product_id", product.id)
       .order("sort_order", { ascending: true });
     if (!variantError) {
-      variants = (variantRows ?? []).map((variant: any) => ({ ...variant, images: (variant.product_variant_images ?? []).filter((image: any) => image.available_quantity > 0) }));
+      variants = (variantRows ?? []).map((variant: any) => ({ ...variant, inventory_mode: "photo", images: (variant.product_variant_images ?? []).filter((image: any) => image.available_quantity > 0) }));
     } else if (!["42P01", "PGRST200", "PGRST205"].includes(variantError.code || "")) {
       console.error("Failed to load product variants:", variantError);
     }
 
     return {
       ...product,
+      inventory_mode: "photo",
       image: product.image_url || product.image || "",
       featured: Boolean(product.is_featured),
       occasion: Array.isArray(product.occasion) ? product.occasion : [],

@@ -36,7 +36,7 @@ export async function validateCheckoutItems(
     if (!product || !product.is_published || product.stock_status === "Out of stock") return "Product is unavailable.";
     const variant = item.variant_id ? variantById.get(item.variant_id) : undefined;
     if (item.variant_id && (!variant || variant.product_id !== product.id)) return "Selected option is invalid for this product.";
-    const photoMode = product.inventory_mode === "photo" || variant?.inventory_mode === "photo";
+    const photoMode = Boolean(variant) || product.inventory_mode === "photo";
     if (photoMode && (!variant || !item.image_id)) return "Photo inventory requires a selected option and artwork.";
     if (!photoMode && item.image_id) return "Artwork cannot be selected for traditional inventory.";
     if (item.image_id) {

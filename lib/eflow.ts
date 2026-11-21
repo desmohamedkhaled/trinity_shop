@@ -96,6 +96,12 @@ export async function calculateParcel(
   supabase: SupabaseClient,
   items: ShippingCartItem[],
 ) {
+  if (items.length === 0) {
+    return { error: "Live shipping requires at least one cart item." as const };
+  }
+  if (items.some((item) => !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99)) {
+    return { error: "Each cart quantity must be an integer from 1 to 99." as const };
+  }
   const productIds = Array.from(new Set(items.map((item) => item.id)));
   const variantIds = Array.from(new Set(items.map((item) => item.variant_id).filter((id): id is string => Boolean(id))));
   const [{ data: products, error: productError }, { data: variants, error: variantError }] = await Promise.all([
@@ -106,14 +112,12 @@ export async function calculateParcel(
 
   const productById = new Map((products ?? []).map((product) => [product.id, product]));
   const variantById = new Map((variants ?? []).map((variant) => [variant.id, variant]));
-  if (items.length !== 1) {
-    return { error: "Live shipping requires a parcel with one confirmed product configuration. Multiple-item package dimensions are not available." as const };
-  }
-  const item = items[0];
-  if (!Number.isInteger(item.quantity) || item.quantity !== 1) {
-    return { error: "Live shipping requires one unit until confirmed carton dimensions are available." as const };
-  }
-  {
+  let parcelLength: number | null = null;
+  let parcelWidth: number | null = null;
+  let parcelHeight: number | null = null;
+  let totalWeightGrams = 0;
+
+  for (const item of items) {
     const product = productById.get(item.id);
     const variant = item.variant_id ? variantById.get(item.variant_id) : undefined;
     if (!product || (item.variant_id && (!variant || variant.product_id !== product.id))) {
@@ -122,37 +126,51 @@ export async function calculateParcel(
     const variantWeight = variant ? positiveWeightGrams(variant.weight) : null;
     const productWeight = positiveWeightGrams(product.weight);
     const weightGrams = variant ? (variantWeight ?? productWeight) : productWeight;
-    const values = [variant?.length ?? product.length, variant?.width ?? product.width, variant?.height ?? product.height];
+    const values = [
+      variant ? variant.length : product.length,
+      variant ? variant.width : product.width,
+      variant ? variant.height : product.height,
+    ];
     if (values.some((value) => typeof value !== "number" || !Number.isFinite(value) || value <= 0)) {
       return { error: "Live shipping requires confirmed positive length, width and height for the selected product or option." as const };
     }
     if (weightGrams === null) {
       return { error: "Live shipping requires a positive weight in grams for the selected product or option." as const };
     }
-
     const length = Number(values[0]);
     const width = Number(values[1]);
     const height = Number(values[2]);
-    const weightKg = gramsToEflowKg(weightGrams);
-    if (weightKg === null) {
-      return { error: "Live shipping requires a valid positive weight in grams." as const };
+    if (parcelLength !== null && (length !== parcelLength || width !== parcelWidth || height !== parcelHeight)) {
+      return { error: "Live shipping is unavailable when cart items have conflicting confirmed package dimensions." as const };
     }
-    if (length > 105 || width > 105 || height > 105 || weightKg > 22 || length * width * height > 250000) {
-      return { error: "The parcel exceeds eFlow's documented size or weight limits." as const };
-    }
-    const fromPostcode = process.env.EFLOW_FROM_POSTCODE;
-    if (!fromPostcode || !/^\d{4}$/.test(fromPostcode)) return { error: "EFLOW_FROM_POSTCODE is missing or invalid." as const };
-    return {
-      parcel: {
-        from_postcode: fromPostcode,
-        to_postcode: "",
-        length: Number(length.toFixed(2)),
-        width: Number(width.toFixed(2)),
-        height: Number(height.toFixed(2)),
-        weight: Number(weightKg.toFixed(3)),
-      } satisfies Parcel,
-    };
+    parcelLength = length;
+    parcelWidth = width;
+    parcelHeight = height;
+    totalWeightGrams += weightGrams * item.quantity;
   }
+
+  const weightKg = gramsToEflowKg(totalWeightGrams);
+  if (weightKg === null) {
+    return { error: "Live shipping requires a valid positive weight in grams." as const };
+  }
+  if (parcelLength === null || parcelWidth === null || parcelHeight === null) {
+    return { error: "Live shipping requires confirmed parcel dimensions." as const };
+  }
+  if (parcelLength > 105 || parcelWidth > 105 || parcelHeight > 105 || weightKg > 22 || parcelLength * parcelWidth * parcelHeight > 250000) {
+    return { error: "The parcel exceeds eFlow's documented size or weight limits." as const };
+  }
+  const fromPostcode = process.env.EFLOW_FROM_POSTCODE;
+  if (!fromPostcode || !/^\d{4}$/.test(fromPostcode)) return { error: "EFLOW_FROM_POSTCODE is missing or invalid." as const };
+  return {
+    parcel: {
+      from_postcode: fromPostcode,
+      to_postcode: "",
+      length: Number(parcelLength.toFixed(2)),
+      width: Number(parcelWidth.toFixed(2)),
+      height: Number(parcelHeight.toFixed(2)),
+      weight: Number(weightKg.toFixed(3)),
+    } satisfies Parcel,
+  };
 }
 import type { SupabaseClient } from "@supabase/supabase-js";
 

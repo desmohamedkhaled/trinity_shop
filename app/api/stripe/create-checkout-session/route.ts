@@ -3,6 +3,7 @@ import { serviceSupabase } from "@/lib/admin";
 import { stripe } from "@/lib/stripe";
 import { validateCheckoutItems } from "@/lib/checkout-validation";
 import { calculateParcel, quoteEflowService } from "@/lib/eflow";
+import { resolveServerPreorders } from "@/lib/preorder";
 
 type Customer = {
   name?: string;
@@ -32,7 +33,7 @@ function normalizeItems(items: Item[]) {
       quantity: (current?.quantity || 0) + quantity,
       is_deposit: item.is_deposit === true,
       deposit_percentage: item.is_deposit === true ? 50 : 0,
-      remaining_balance: item.remaining_balance,
+      remaining_balance: 0,
     });
   }
   return Array.from(merged.values()).sort((left, right) => left.id.localeCompare(right.id));
@@ -66,6 +67,8 @@ export async function POST(request: Request) {
   }
   const validationError = await validateCheckoutItems(supabase, items);
   if (validationError) return NextResponse.json({ error: validationError }, { status: 409 });
+  const preorderResolution = await resolveServerPreorders(supabase, items);
+  if ("error" in preorderResolution) return NextResponse.json({ error: preorderResolution.error }, { status: 422 });
   const parcelResult = await calculateParcel(supabase, items);
   if ("error" in parcelResult) return NextResponse.json({ error: parcelResult.error }, { status: 422 });
   parcelResult.parcel.to_postcode = String(customer.postcode);
@@ -105,9 +108,12 @@ export async function POST(request: Request) {
   const orderNumber = String(order.order_number);
   const origin = (process.env.NEXT_PUBLIC_SITE_URL || request.headers.get("origin") || "http://localhost:3000").replace(/\/$/, "");
   const lineItems = reservation.items.map((item) => {
-    const cartItem = items.find((candidate) => candidate.id === String(item.product_id) && (candidate.variant_id || "") === (String(item.variant_id || "")));
-    const unitPrice = cartItem?.is_deposit
-      ? Math.round(Number(item.unit_price) * 100 * 0.5) / 100
+    const serverPreorder = preorderResolution.items.find((candidate) =>
+      candidate.id === String(item.product_id) &&
+      (candidate.variant_id || "") === (String(item.variant_id || "")),
+    );
+    const unitPrice = serverPreorder?.is_deposit
+      ? serverPreorder.deposit_amount
       : Number(item.unit_price);
     return {
       price_data: {
@@ -166,14 +172,16 @@ export async function POST(request: Request) {
 
     if (updateError || !attachedOrder) throw new Error("Unable to attach Stripe session to the order.");
     const depositItems = reservation.items.map((reservedItem) => {
-      const cartItem = items.find((candidate) => candidate.id === String(reservedItem.product_id) && (candidate.variant_id || "") === (String(reservedItem.variant_id || "")));
-      const isDeposit = cartItem?.is_deposit === true;
-      const unitPrice = Number(reservedItem.unit_price);
+      const serverPreorder = preorderResolution.items.find((candidate) =>
+        candidate.id === String(reservedItem.product_id) &&
+        (candidate.variant_id || "") === (String(reservedItem.variant_id || "")),
+      );
+        const isDeposit = serverPreorder?.is_deposit === true;
       return {
         id: String(reservedItem.id),
         is_deposit: isDeposit,
-        deposit_percentage: isDeposit ? 50 : 0,
-        remaining_balance: isDeposit ? Math.round(unitPrice * 0.5 * Number(reservedItem.quantity) * 100) / 100 : 0,
+          deposit_percentage: serverPreorder?.deposit_percentage ?? 0,
+          remaining_balance: serverPreorder?.remaining_balance ?? 0,
       };
     });
     const { error: preorderError } = await Promise.all(depositItems.map((item) => supabase.from("order_items").update({

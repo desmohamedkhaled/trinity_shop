@@ -90,6 +90,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: 'Dimensions must be non-negative numbers.' }, { status: 400 });
   }
 
+  const { error: inventoryModeError } = await supabase
+    .from('products')
+    .update({ inventory_mode: 'photo' })
+    .eq('id', id);
+  if (inventoryModeError) return NextResponse.json({ error: inventoryModeError.message }, { status: 400 });
+
   const { data, error } = await supabase.from('products').update(row).eq('id', id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   if (variants) {
@@ -99,7 +105,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         ...variant,
         product_id: id,
         stock: existing?.stock ?? 0,
-        inventory_mode: existing?.inventory_mode ?? 'photo',
+        inventory_mode: 'photo',
       };
     });
     const retainedIds = variants.filter((variant: any) => variant.id).map((variant: any) => variant.id);

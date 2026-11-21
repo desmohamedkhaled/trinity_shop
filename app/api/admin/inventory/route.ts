@@ -9,7 +9,13 @@ export async function GET() {
     .select("id, name, sku, slug, category, occasion, image_url, stock, inventory_mode, product_images(id, image_url, alt_text, sort_order), product_variants(id, name, stock, inventory_mode, length, width, height, product_variant_images(id, image_url, alt_text, sort_order, available_quantity, low_stock_threshold))")
     .order("name");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data ?? []);
+  return NextResponse.json((data ?? []).map((product: Record<string, unknown>) => ({
+    ...product,
+    inventory_mode: "photo",
+    product_variants: Array.isArray(product.product_variants)
+      ? product.product_variants.map((variant: Record<string, unknown>) => ({ ...variant, inventory_mode: "photo" }))
+      : [],
+  })));
 }
 
 export async function POST(request: Request) {
