@@ -11,9 +11,12 @@ export function AddToCartButton({ product, variant, image, compact = false, preo
   const [added, setAdded] = useState(false);
   const comingSoon = isComingSoonProduct(product);
   const photoMode = product.inventory_mode === "photo" || variant?.inventory_mode === "photo";
+  const baseStock = variant ? variant.stock : product.stock ?? 0;
+  // When a specific photo is chosen, use its quantity; otherwise fall back to product/variant stock.
+  const inStock = photoMode && image ? (image.available_quantity ?? 0) > 0 : baseStock > 0;
   const available = comingSoon
     ? Boolean(preorder ? (variant?.price ?? product.price) >= 0 : true)
-    : (photoMode ? Boolean(image && (image.available_quantity ?? 0) > 0) : (variant ? variant.stock : product.stock ?? 0) > 0) && product.stock_status !== "Out of stock";
+    : inStock && product.stock_status !== "Out of stock";
   function add() {
     if (!available) return;
     if (comingSoon && preorder) {
