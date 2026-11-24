@@ -11,6 +11,7 @@ export function AddToCartButton({ product, variant, image, compact = false, preo
   const { addToCart } = useStore();
   const [added, setAdded] = useState(false);
   const comingSoon = isComingSoonProduct(product);
+<<<<<<< HEAD
   const preorderEligible = comingSoon && product.preorder_eligible === true;
   const depositPercentage = preorderEligible
     ? Math.max(1, Math.min(100, Number(product.deposit_percentage ?? 50)))
@@ -23,6 +24,15 @@ export function AddToCartButton({ product, variant, image, compact = false, preo
     : photoMode
       ? Boolean(image && (image.available_quantity ?? 0) > 0)
       : stockAvailable;
+=======
+  const photoMode = product.inventory_mode === "photo" || variant?.inventory_mode === "photo";
+  const baseStock = variant ? variant.stock : product.stock ?? 0;
+  // When a specific photo is chosen, use its quantity; otherwise fall back to product/variant stock.
+  const inStock = photoMode && image ? (image.available_quantity ?? 0) > 0 : baseStock > 0;
+  const available = comingSoon
+    ? Boolean(preorder ? (variant?.price ?? product.price) >= 0 : true)
+    : inStock && product.stock_status !== "Out of stock";
+>>>>>>> 02e8a5562de6ded9c3951424375a9b5cd2b14da4
   function add() {
     if (!available) return;
     if (preorderEligible && preorder) {
