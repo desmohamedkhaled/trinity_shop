@@ -21,11 +21,14 @@ export function ProductDetail({ product }: { product: Product }) {
   const displayProduct = variant
     ? { ...product, price: variant.price, length: variant.length, width: variant.width, height: variant.height, weight: variant.weight, gallery: variant.images || product.gallery }
     : product;
-  const photoMode = product.inventory_mode === "photo" || variant?.inventory_mode === "photo";
+  const photoMode = (product.inventory_mode === "photo" || variant?.inventory_mode === "photo")
+    && Boolean(variant ? variant.images?.length : product.gallery?.length);
   const artworkImages = (variant?.images || []).filter((image) => (image.available_quantity ?? 0) > 0);
   const selectedImage = artworkImages.find((image) => image.id === selectedImageId);
   const allDepleted = product.variants?.length
-    ? product.variants.every((item) => item.stock <= 0)
+    ? product.variants.every((item) => item.images?.length
+      ? !(item.images ?? []).some((image) => (image.available_quantity ?? 0) > 0)
+      : item.stock <= 0)
     : (product.stock ?? 0) <= 0;
   const comingSoon = isComingSoonProduct(product);
   const effectiveWeight = variant?.weight != null && Number(variant.weight) > 0

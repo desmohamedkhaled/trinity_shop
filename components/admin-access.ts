@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { browserSupabase } from "@/lib/supabase";
+import type { AuthChangeEvent } from "@supabase/supabase-js";
 
 export type AdminPermission = string;
 
@@ -49,10 +50,10 @@ export function AdminAccessProvider({
       };
     }
 
-    const { data: authSubscription } = supabase.auth.onAuthStateChange((event) => {
+    const { data: authSubscription } = supabase.auth.onAuthStateChange((event: AuthChangeEvent) => {
       if (!active) return;
 
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+      if (event === "SIGNED_IN") {
         setAccess(null);
         setStatus("loading");
         setRefreshKey((value) => value + 1);

@@ -25,6 +25,8 @@ type Request = {
 };
 
 type Status = "new" | "reviewing" | "recommended" | "completed" | "cancelled";
+const statusFilterOptions = (["new", "reviewing", "recommended", "completed", "cancelled"] as Status[])
+  .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
 
 const statusColors: Record<Status, string> = {
   new: "bg-blue-100 text-blue-800",
@@ -113,11 +115,7 @@ export default function GiftFinderRequestsPage() {
           className="rounded-lg border bg-white/60 px-4 py-2 outline-none focus:border-[#1267a8]"
         >
           <option value="">All Statuses</option>
-          <option value="new">New</option>
-          <option value="reviewing">Reviewing</option>
-          <option value="recommended">Recommended</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
+          {statusFilterOptions.map((status) => <option key={status} value={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</option>)}
         </select>
       </div>
 

@@ -1,5 +1,7 @@
 import { createBrowserClient, createServerClient } from '@supabase/ssr';
 
+let browserClient: ReturnType<typeof createBrowserClient> | null = null;
+
 export function hasSupabaseConfig() {
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -15,7 +17,17 @@ export function browserSupabase() {
     return null;
   }
 
-  return createBrowserClient(url, anonKey);
+  if (!browserClient) {
+    browserClient = createBrowserClient(url, anonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
+  }
+
+  return browserClient;
 }
 
 export async function serverSupabase() {

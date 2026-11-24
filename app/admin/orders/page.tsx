@@ -43,6 +43,9 @@ const statusOptions = [
   "completed",
   "canceled",
 ];
+const statusFilterOptions = [...statusOptions].sort((a, b) =>
+  a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }),
+);
 
 export default function Orders() {
   const { can } = useAdminAccess();
@@ -161,7 +164,7 @@ export default function Orders() {
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search requests or customers" className="min-w-64 flex-1 rounded-xl border bg-white px-4 py-3 text-sm outline-none focus:border-[#1267a8]" />
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border bg-white px-4 py-3 text-sm font-semibold">
           <option value="all">All statuses</option>
-          {statusOptions.map((status) => <option key={status} value={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</option>)}
+          {statusFilterOptions.map((status) => <option key={status} value={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</option>)}
         </select>
       </div>
       <section className="mt-10 rounded-2xl border border-black/10 bg-white p-6 shadow-sm">

@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
 import { requirePermission, serviceSupabase } from "@/lib/admin";
 
+const INVENTORY_PAGE_SIZE = 1000;
+
 export async function GET() {
   const access = await requirePermission("inventory.read");
   if (access.response) return access.response;
-  const { data, error } = await access.supabase
-    .from("products")
-    .select("id, name, sku, slug, category, occasion, image_url, stock, inventory_mode, product_images(id, image_url, alt_text, sort_order), product_variants(id, name, stock, inventory_mode, length, width, height, product_variant_images(id, image_url, alt_text, sort_order, available_quantity, low_stock_threshold))")
-    .order("name");
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json((data ?? []).map((product: Record<string, unknown>) => ({
+  const products: Record<string, unknown>[] = [];
+  for (let offset = 0; ; offset += INVENTORY_PAGE_SIZE) {
+    const { data: page, error } = await access.supabase
+      .from("products")
+      .select("id, name, sku, slug, category, occasion, image_url, stock, inventory_mode, product_images(id, image_url, alt_text, sort_order), product_variants(id, name, stock, inventory_mode, length, width, height, product_variant_images(id, image_url, alt_text, sort_order, available_quantity, low_stock_threshold))")
+      .order("name")
+      .order("id")
+      .range(offset, offset + INVENTORY_PAGE_SIZE - 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    products.push(...(page ?? []));
+    if ((page?.length ?? 0) < INVENTORY_PAGE_SIZE) break;
+  }
+  return NextResponse.json(products.map((product) => ({
     ...product,
     inventory_mode: "photo",
     product_variants: Array.isArray(product.product_variants)

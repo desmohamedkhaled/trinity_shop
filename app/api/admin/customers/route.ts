@@ -5,7 +5,6 @@ export async function GET() {
   const access = await requirePermission("customers.read");
   if (access.response) return access.response;
 
-  
   const supabase = serviceSupabase();
   if (!supabase) return NextResponse.json({ error: "Server database credentials are not configured." }, { status: 503 });
 
@@ -21,6 +20,7 @@ export async function GET() {
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
   return NextResponse.json({
     customers: data ?? [],
     canUpdate: hasPermission(access.admin, "customers.update"),

@@ -55,13 +55,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("trinity-gift-quantities", JSON.stringify(quantities));
   }, [cart, cartQuantities, giftList, hydrated, quantities]);
 
-  const lineId = (p: Product, variant?: ProductVariant, image?: ProductImage) => `${p.id}:${variant?.id || "default"}:${image?.id || "default"}`;
+  const lineId = (p: Product, variant?: ProductVariant, image?: ProductImage, preorder?: { is_deposit?: boolean; deposit_percentage?: number }) =>
+    `${p.id}:${variant?.id || "default"}:${image?.id || "default"}:${preorder?.is_deposit ? `deposit-${preorder.deposit_percentage}` : "full"}`;
   const addToCart = (p: Product, variant?: ProductVariant, image?: ProductImage, preorder?: { is_deposit: boolean; deposit_percentage: number; remaining_balance: number }) => {
-    const id = lineId(p, variant, image);
-    setCart((items) => items.some((item) => lineId(item.product, item.variant, item.image) === id) ? items : [...items, { product: p, variant, image, ...preorder }]);
+    const id = lineId(p, variant, image, preorder);
+    setCart((items) => items.some((item) => lineId(item.product, item.variant, item.image, item) === id) ? items : [...items, { product: p, variant, image, ...preorder }]);
     setCartQuantities((items) => ({ ...items, [id]: items[id] || 1 }));
   };
-  const removeFromCart = (id: string) => { setCart((items) => items.filter((item) => lineId(item.product, item.variant, item.image) !== id)); setCartQuantities((items) => { const next = { ...items }; delete next[id]; return next; }); };
+  const removeFromCart = (id: string) => { setCart((items) => items.filter((item) => lineId(item.product, item.variant, item.image, item) !== id)); setCartQuantities((items) => { const next = { ...items }; delete next[id]; return next; }); };
   const setCartQuantity = (id: string, quantity: number) => setCartQuantities((items) => ({ ...items, [id]: Math.max(1, Math.min(99, quantity)) }));
   const clearCart = () => { setCart([]); setCartQuantities({}); };
   const addToGiftList = (p: Product) => { setGiftList((x) => x.some(i => i.id === p.id) ? x : [...x, p]); setQuantities(q => ({...q,[p.id]:q[p.id]||1})); };
@@ -69,7 +70,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const toggleGiftList = (p: Product) => { setGiftList((items) => { if (items.some((item) => item.id === p.id)) return items.filter((item) => item.id !== p.id); return [...items, p]; }); setQuantities((current) => { if (current[p.id]) return current; return { ...current, [p.id]: 1 }; }); };
   const setQuantity = (id:string, quantity:number) => setQuantities(q => ({...q,[id]:Math.max(1,Math.min(99,quantity))}));
   const clearGiftList = () => { setGiftList([]); setQuantities({}); };
-  const cartCount = cart.reduce((total, line) => total + (cartQuantities[lineId(line.product, line.variant, line.image)] || 1), 0);
+  const cartCount = cart.reduce((total, line) => total + (cartQuantities[lineId(line.product, line.variant, line.image, line)] || 1), 0);
   return <StoreContext.Provider value={{cart,cartQuantities,addToCart,removeFromCart,setCartQuantity,clearCart,cartCount,giftList,quantities,addToGiftList,removeFromGiftList,toggleGiftList,setQuantity,clearGiftList,isInGiftList: id => giftList.some(i => i.id === id)}}>{children}</StoreContext.Provider>;
 }
 export function useStore() {

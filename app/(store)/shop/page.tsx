@@ -27,9 +27,9 @@ function startingPrice(product: Product) {
 }
 
 function isAvailable(product: Product) {
-  if (product.stock_status === "Out of stock" || isComingSoonProduct(product)) return false;
+  if (isComingSoonProduct(product)) return false;
   return product.variants?.length
-    ? product.variants.some((variant) => (product.inventory_mode === "photo" || variant.inventory_mode === "photo")
+    ? product.variants.some((variant) => (variant.images ?? []).length > 0
       ? (variant.images ?? []).some((image) => (image.available_quantity ?? 0) > 0)
       : variant.stock > 0)
     : (product.stock ?? 0) > 0;
@@ -56,7 +56,7 @@ export default async function Shop({ searchParams }: { searchParams: Promise<Sho
       categoryLabels.set(key, label);
     }
   }
-  const categories = ["All", ...Array.from(categoryLabels.values()).sort((a, b) => a.localeCompare(b))];
+  const categories = ["All", ...Array.from(categoryLabels.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }))];
   const selectedCategory = category.trim().toLocaleLowerCase();
   const showAllCategories = !params.category || selectedCategory === "all";
   const hasActiveFilters = !showAllCategories || Boolean(searchValue || params.minPrice || params.maxPrice || inStockOnly || params.sort);

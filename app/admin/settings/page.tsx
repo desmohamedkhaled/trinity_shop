@@ -15,11 +15,26 @@ type AdminUser = {
   custom_permissions: PermissionKey[];
 };
 
+type ShippingOrigin = {
+  address: string;
+  suburb: string;
+  state: string;
+  postcode: string;
+};
+
+const emptyShippingOrigin: ShippingOrigin = {
+  address: "",
+  suburb: "",
+  state: "",
+  postcode: "",
+};
+
 export default function Settings() {
   const { access, refresh } = useAdminAccess();
   const [enabled, setEnabled] = useState(true);
   const [number, setNumber] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [shippingOrigin, setShippingOrigin] = useState<ShippingOrigin>(emptyShippingOrigin);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -45,6 +60,16 @@ export default function Settings() {
       if (data.whatsapp_checkout_enabled !== undefined) setEnabled(Boolean(data.whatsapp_checkout_enabled));
       if (data.whatsapp_number !== undefined) setNumber(String(data.whatsapp_number || ""));
       if (data.phone_number !== undefined) setPhoneNumber(String(data.phone_number || ""));
+      if (data.shipping_origin && typeof data.shipping_origin === "object") {
+        setShippingOrigin({
+          address: String(data.shipping_origin.address || ""),
+          suburb: String(data.shipping_origin.suburb || ""),
+          state: String(data.shipping_origin.state || ""),
+          postcode: String(data.shipping_origin.postcode || ""),
+        });
+      } else if (data.shipping_origin_postcode) {
+        setShippingOrigin((current) => ({ ...current, postcode: String(data.shipping_origin_postcode) }));
+      }
     } catch (loadError) {
       setSettingsError(loadError instanceof Error ? loadError.message : "Could not load settings");
     } finally {
@@ -76,7 +101,7 @@ export default function Settings() {
     setSaved(false);
     setSettingsError("");
     try {
-      const response = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ whatsapp_checkout_enabled: enabled, whatsapp_number: number.replace(/\D/g, ""), phone_number: phoneNumber }) });
+      const response = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ whatsapp_checkout_enabled: enabled, whatsapp_number: number.replace(/\D/g, ""), phone_number: phoneNumber, shipping_origin: shippingOrigin }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not save settings");
       setSaved(true);
@@ -172,6 +197,29 @@ export default function Settings() {
         <label className="mt-8 block text-sm font-bold">WhatsApp business number<span className="mt-1 block text-xs font-normal text-black/45">Use international format without + or spaces.</span><input value={number} onChange={(event) => setNumber(event.target.value)} placeholder="2010XXXXXXXX" className="mt-3 w-full rounded-xl border p-3" /></label>
         <div className="mt-7 flex flex-wrap items-center gap-4"><button disabled={saving} onClick={saveSettings} className="rounded-xl bg-[#083b68] px-5 py-3 font-bold text-white disabled:opacity-50">{saving ? "Saving..." : "Save settings"}</button>{saved && <span className="text-sm font-semibold text-green-700">Saved successfully</span>}</div>
         <label className="mt-8 block text-sm font-bold" htmlFor="store-phone-number">Phone Number<span className="mt-1 block text-xs font-normal text-black/45">Public store phone displayed on the Contact page.</span><input id="store-phone-number" type="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} placeholder="+61 400 123 456" className="mt-3 w-full rounded-xl border p-3 outline-none focus:border-[#1267a8] focus:ring-2 focus:ring-[#1267a8]/20" /></label>
+      </section>
+
+      <section className="mt-8 max-w-3xl rounded-3xl border bg-white p-6 md:p-8">
+        <h2 className="font-bold">Shipping starting address</h2>
+        <p className="mt-1 text-sm text-black/50">Used as the shipment origin when requesting live eFlow rates. The postcode determines the origin zone. Cart items are combined into one parcel using the largest length and width, stacked heights, and total weight.</p>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <label className="text-sm font-bold sm:col-span-2">Street address
+            <input value={shippingOrigin.address} onChange={(event) => setShippingOrigin({ ...shippingOrigin, address: event.target.value })} maxLength={200} placeholder="Street address" className="mt-2 w-full rounded-xl border p-3 font-normal" />
+          </label>
+          <label className="text-sm font-bold">Suburb
+            <input value={shippingOrigin.suburb} onChange={(event) => setShippingOrigin({ ...shippingOrigin, suburb: event.target.value })} maxLength={100} placeholder="Suburb" className="mt-2 w-full rounded-xl border p-3 font-normal" />
+          </label>
+          <label className="text-sm font-bold">State
+            <input value={shippingOrigin.state} onChange={(event) => setShippingOrigin({ ...shippingOrigin, state: event.target.value })} maxLength={50} placeholder="NSW" className="mt-2 w-full rounded-xl border p-3 font-normal" />
+          </label>
+          <label className="text-sm font-bold">Origin postcode
+            <input required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={shippingOrigin.postcode} onChange={(event) => setShippingOrigin({ ...shippingOrigin, postcode: event.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder="2000" className="mt-2 w-full rounded-xl border p-3 font-normal" />
+          </label>
+        </div>
+        <div className="mt-7 flex flex-wrap items-center gap-4">
+          <button disabled={loading || saving} onClick={saveSettings} className="rounded-xl bg-[#083b68] px-5 py-3 font-bold text-white disabled:opacity-50">{saving ? "Saving..." : "Save settings"}</button>
+          {saved && <span className="text-sm font-semibold text-green-700">Saved successfully</span>}
+        </div>
       </section>
 
       <section className="mt-8 max-w-4xl rounded-3xl border bg-white p-6 md:p-8">

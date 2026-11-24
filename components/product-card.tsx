@@ -98,7 +98,11 @@ export function ProductCard({ product }: { product: Product }) {
             Coming Soon
           </span>
         )}
-        {product.stock_status === "Out of stock" && (
+        {(product.variants?.length
+          ? product.variants.every((variant) => (variant.images ?? []).length
+              ? !(variant.images ?? []).some((image) => (image.available_quantity ?? 0) > 0)
+              : variant.stock <= 0)
+          : (product.stock ?? 0) <= 0) && (
           <span className="absolute bottom-4 left-4 rounded-full bg-black/70 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white">
             Out of stock
           </span>

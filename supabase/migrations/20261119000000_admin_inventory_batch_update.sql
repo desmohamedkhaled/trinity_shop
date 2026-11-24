@@ -9,12 +9,12 @@ set search_path = public
 as $$
 declare
   change jsonb;
-  image_id uuid;
-  product_id uuid;
-  requested integer;
-  expected integer;
-  current_value integer;
-  updated_count integer := 0;
+  v_image_id uuid;
+  v_product_id uuid;
+  v_requested integer;
+  v_expected integer;
+  v_current_value integer;
+  v_updated_count integer := 0;
 begin
   if jsonb_typeof(p_changes) <> 'array' or jsonb_array_length(p_changes) = 0 then
     raise exception 'At least one inventory change is required';
@@ -35,56 +35,58 @@ begin
   -- back the whole function call, so the batch remains atomic.
   for change in select * from jsonb_array_elements(p_changes)
   loop
-    image_id := nullif(change->>'image_id', '')::uuid;
-    product_id := nullif(change->>'product_id', '')::uuid;
-    requested := (change->>'value')::integer;
-    expected := (change->>'expected_value')::integer;
+    v_image_id := nullif(change->>'image_id', '')::uuid;
+    v_product_id := nullif(change->>'product_id', '')::uuid;
+    v_requested := (change->>'value')::integer;
+    v_expected := (change->>'expected_value')::integer;
 
-    if (image_id is null) = (product_id is null)
-       or requested < 0 or requested > 100000
-       or expected < 0 or expected > 100000 then
+    if (v_image_id is null) = (v_product_id is null)
+       or v_requested < 0 or v_requested > 100000
+       or v_expected < 0 or v_expected > 100000 then
       raise exception 'Invalid inventory change';
     end if;
 
-    if image_id is not null then
-      select available_quantity into current_value
+    if v_image_id is not null then
+      select i.available_quantity into v_current_value
       from product_variant_images
-      where id = image_id
+      as i
+      where i.id = v_image_id
       for update;
     else
-      select stock into current_value
+      select p.stock into v_current_value
       from products
-      where id = product_id
+      as p
+      where p.id = v_product_id
       for update;
     end if;
 
-    if current_value is null then
+    if v_current_value is null then
       raise exception 'Inventory target was not found or is not editable';
     end if;
-    if current_value <> expected then
+    if v_current_value <> v_expected then
       raise exception 'Inventory changed elsewhere';
     end if;
   end loop;
 
   for change in select * from jsonb_array_elements(p_changes)
   loop
-    image_id := nullif(change->>'image_id', '')::uuid;
-    product_id := nullif(change->>'product_id', '')::uuid;
-    requested := (change->>'value')::integer;
+    v_image_id := nullif(change->>'image_id', '')::uuid;
+    v_product_id := nullif(change->>'product_id', '')::uuid;
+    v_requested := (change->>'value')::integer;
 
-    if image_id is not null then
+    if v_image_id is not null then
       update product_variant_images
-      set available_quantity = requested
-      where id = image_id;
+      set available_quantity = v_requested
+      where id = v_image_id;
     else
       update products
-      set stock = requested, updated_at = now()
-      where id = product_id;
+      set stock = v_requested, updated_at = now()
+      where id = v_product_id;
     end if;
-    updated_count := updated_count + 1;
+    v_updated_count := v_updated_count + 1;
   end loop;
 
-  return jsonb_build_object('updated', updated_count);
+  return jsonb_build_object('updated', v_updated_count);
 end;
 $$;
 

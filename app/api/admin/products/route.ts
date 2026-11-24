@@ -1,10 +1,23 @@
 import { NextResponse } from 'next/server';
 import { requirePermission } from '@/lib/admin';
 
+const PRODUCT_PAGE_SIZE = 1000;
+
 function dimension(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function preorderSettings(value: unknown) {
+  const body = value as { preorder_eligible?: unknown; deposit_percentage?: unknown };
+  const eligible = body.preorder_eligible === true;
+  const percentage = Number(body.deposit_percentage);
+  if (!eligible) return { preorder_eligible: false, deposit_percentage: 50 };
+  if (!Number.isInteger(percentage) || percentage < 1 || percentage > 100) {
+    throw new Error('Deposit percentage must be an integer from 1 to 100.');
+  }
+  return { preorder_eligible: true, deposit_percentage: percentage };
 }
 
 function validateVariants(value: unknown) {
@@ -51,9 +64,24 @@ export async function GET() {
   if (access.response) return access.response;
   const { supabase } = access;
 
-  let { data, error } = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order), product_variants(id, product_id, name, price, stock, length, width, height, weight, sort_order, inventory_mode, product_variant_images(id, variant_id, image_url, alt_text, sort_order, available_quantity, low_stock_threshold))').order('created_at', { ascending: false });
+  const fetchProducts = async (selection: string) => {
+    const products = [];
+    for (let offset = 0; ; offset += PRODUCT_PAGE_SIZE) {
+      const { data: page, error } = await supabase
+        .from('products')
+        .select(selection)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(offset, offset + PRODUCT_PAGE_SIZE - 1);
+      if (error) return { data: null, error };
+      products.push(...(page ?? []));
+      if ((page?.length ?? 0) < PRODUCT_PAGE_SIZE) return { data: products, error: null };
+    }
+  };
+
+  let { data, error } = await fetchProducts('*, product_images(id, product_id, image_url, alt_text, sort_order), product_variants(id, product_id, name, price, stock, length, width, height, weight, sort_order, inventory_mode, product_variant_images(id, variant_id, image_url, alt_text, sort_order, available_quantity, low_stock_threshold))');
   if (error?.code === 'PGRST200') {
-    const fallback = await supabase.from('products').select('*, product_images(id, product_id, image_url, alt_text, sort_order)').order('created_at', { ascending: false });
+    const fallback = await fetchProducts('*, product_images(id, product_id, image_url, alt_text, sort_order)');
     data = fallback.data;
     error = fallback.error;
   }
@@ -91,6 +119,12 @@ export async function POST(req: Request) {
   if (!Number.isFinite(price) || price < 0) {
     return NextResponse.json({ error: 'Price must be a valid non-negative number.' }, { status: 400 });
   }
+  let preorder: { preorder_eligible: boolean; deposit_percentage: number };
+  try {
+    preorder = preorderSettings(b);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid preorder settings.' }, { status: 400 });
+  }
   if (b.stock_status !== undefined && !['In stock', 'Out of stock'].includes(b.stock_status)) {
     return NextResponse.json({ error: 'Stock status must be In stock or Out of stock.' }, { status: 400 });
   }
@@ -114,6 +148,7 @@ export async function POST(req: Request) {
     is_published: b.is_published !== false,
     occasion: Array.isArray(b.occasion) ? b.occasion : [],
     gift_for: Array.isArray(b.gift_for) ? b.gift_for : [],
+    ...preorder,
     ...dimensions,
   };
 

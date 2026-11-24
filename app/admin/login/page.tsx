@@ -56,7 +56,6 @@ export default function AdminLogin() {
     }
 
     router.replace("/admin");
-    router.refresh();
   }
 
   return (

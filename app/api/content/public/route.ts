@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { homepageContentKeys } from "@/lib/homepage-content";
 
 export async function GET() {
   if (
@@ -17,7 +18,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("site_settings")
     .select("key,value")
-    .in("key", ["hero_title", "hero_subtitle"]);
+    .in("key", ["hero_title", "hero_subtitle", ...homepageContentKeys]);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

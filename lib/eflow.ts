@@ -112,9 +112,9 @@ export async function calculateParcel(
 
   const productById = new Map((products ?? []).map((product) => [product.id, product]));
   const variantById = new Map((variants ?? []).map((variant) => [variant.id, variant]));
-  let parcelLength: number | null = null;
-  let parcelWidth: number | null = null;
-  let parcelHeight: number | null = null;
+  let parcelLength = 0;
+  let parcelWidth = 0;
+  let parcelHeight = 0;
   let totalWeightGrams = 0;
 
   for (const item of items) {
@@ -140,12 +140,9 @@ export async function calculateParcel(
     const length = Number(values[0]);
     const width = Number(values[1]);
     const height = Number(values[2]);
-    if (parcelLength !== null && (length !== parcelLength || width !== parcelWidth || height !== parcelHeight)) {
-      return { error: "Live shipping is unavailable when cart items have conflicting confirmed package dimensions." as const };
-    }
-    parcelLength = length;
-    parcelWidth = width;
-    parcelHeight = height;
+    parcelLength = Math.max(parcelLength, length);
+    parcelWidth = Math.max(parcelWidth, width);
+    parcelHeight += height * item.quantity;
     totalWeightGrams += weightGrams * item.quantity;
   }
 
@@ -153,13 +150,31 @@ export async function calculateParcel(
   if (weightKg === null) {
     return { error: "Live shipping requires a valid positive weight in grams." as const };
   }
-  if (parcelLength === null || parcelWidth === null || parcelHeight === null) {
+  if (parcelLength <= 0 || parcelWidth <= 0 || parcelHeight <= 0) {
     return { error: "Live shipping requires confirmed parcel dimensions." as const };
   }
   if (parcelLength > 105 || parcelWidth > 105 || parcelHeight > 105 || weightKg > 22 || parcelLength * parcelWidth * parcelHeight > 250000) {
     return { error: "The parcel exceeds eFlow's documented size or weight limits." as const };
   }
-  const fromPostcode = process.env.EFLOW_FROM_POSTCODE;
+  const { data: originSetting, error: originError } = await supabase
+    .from("site_settings")
+    .select("value")
+    .eq("key", "shipping_origin")
+    .maybeSingle();
+  if (originError) return { error: "Unable to load the store shipping origin." as const };
+
+  let configuredPostcode: unknown;
+  if (typeof originSetting?.value === "string") {
+    try {
+      const origin = JSON.parse(originSetting.value) as { postcode?: unknown };
+      configuredPostcode = origin?.postcode;
+    } catch {
+      return { error: "The store shipping origin setting is invalid." as const };
+    }
+  }
+  const fromPostcode = typeof configuredPostcode === "string" && configuredPostcode
+    ? configuredPostcode
+    : process.env.EFLOW_FROM_POSTCODE;
   if (!fromPostcode || !/^\d{4}$/.test(fromPostcode)) return { error: "EFLOW_FROM_POSTCODE is missing or invalid." as const };
   return {
     parcel: {

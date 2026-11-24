@@ -121,6 +121,8 @@ const blank: Form = {
   width: null,
   height: null,
   weight: null,
+  preorder_eligible: false,
+  deposit_percentage: 50,
 };
 
 export default function AdminProducts() {
@@ -171,7 +173,12 @@ export default function AdminProducts() {
       const occasionsResponse = await fetch("/api/admin/occasions", { cache: "no-store" });
       const occasionsData = occasionsResponse.ok ? await occasionsResponse.json() : [];
       if (!occasionsResponse.ok) setOptionsError("Occasions could not be loaded. Existing selections are preserved.");
-      setOccasionOptions(Array.isArray(occasionsData) ? occasionsData.filter((item) => item?.name).map((item) => ({ value: item.name, label: item.name })) : []);
+      setOccasionOptions(Array.isArray(occasionsData)
+        ? occasionsData
+          .filter((item) => item?.name)
+          .map((item) => ({ value: item.name, label: item.name }))
+          .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base", numeric: true }))
+        : []);
     } catch (err) {
       console.error(err);
       setError("Could not load products");
@@ -206,6 +213,8 @@ export default function AdminProducts() {
       width: p.width ?? null,
       height: p.height ?? null,
       weight: p.weight ?? null,
+      preorder_eligible: Boolean(p.preorder_eligible),
+      deposit_percentage: Number(p.deposit_percentage ?? 50),
       variants: Array.isArray(p.product_variants) ? p.product_variants.map(({ stock: _variantStock, inventory_mode: _variantMode, ...variant }: ProductVariant) => variant) : [],
     });
     setGallery(Array.isArray(p.product_images) ? [...p.product_images].sort((a, b) => a.sort_order - b.sort_order) : []);
@@ -434,6 +443,12 @@ export default function AdminProducts() {
     if (!slug) return setError("Slug is required.");
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return setError("Slug must use lowercase letters, numbers, and hyphens.");
     if (!Number.isFinite(price) || price < 0) return setError("Price must be a valid non-negative number.");
+    if (form.preorder_eligible === true) {
+      const depositPercentage = Number(form.deposit_percentage);
+      if (!Number.isInteger(depositPercentage) || depositPercentage < 1 || depositPercentage > 100) {
+        return setError("Deposit percentage must be a whole number from 1 to 100.");
+      }
+    }
     if (dimensions.some((value) => value !== null && value !== undefined && (!Number.isFinite(value) || value < 0))) return setError("Dimensions must be non-negative numbers.");
     const variants = form.variants || [];
     const variantNames = new Set<string>();
@@ -465,6 +480,8 @@ export default function AdminProducts() {
       JSON.stringify(form.occasion || []) === JSON.stringify(originalProduct.occasion || []) &&
       JSON.stringify(form.giftFor || []) === JSON.stringify(originalProduct.gift_for || originalProduct.giftFor || []) &&
       Boolean(form.featured) === Boolean(originalProduct.is_featured ?? originalProduct.featured) &&
+      Boolean(form.preorder_eligible) === Boolean(originalProduct.preorder_eligible) &&
+      Number(form.deposit_percentage ?? 50) === Number(originalProduct.deposit_percentage ?? 50) &&
       form.is_published !== (originalProduct.is_published !== false)
     );
 
@@ -580,6 +597,7 @@ export default function AdminProducts() {
   }
 
   const categoryOptions = Array.from(new Set([
+    "Coming Soon",
     "Crosses",
     "Jewelry",
     "Prayer & Journals",
@@ -587,7 +605,7 @@ export default function AdminProducts() {
     "Keepsakes",
     "Home Decor",
     ...list.map((product) => product.category).filter((value): value is string => Boolean(value)),
-  ])).sort().map((value) => ({ value, label: value }));
+  ])).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true })).map((value) => ({ value, label: value }));
   const giftForValues = ["Woman", "Man", "Child", "Couple", "Friend"];
 
 const giftForOptions = Array.from(
@@ -602,7 +620,7 @@ const giftForOptions = Array.from(
     ),
   ])
 )
-  .sort()
+  .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }))
   .map((value) => ({ value, label: value }));
   const visibleProducts = list.filter((product) => occasionFilter === "all" || (Array.isArray(product.occasion) && product.occasion.includes(occasionFilter)));
 
@@ -796,6 +814,47 @@ const giftForOptions = Array.from(
                   className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 outline-none transition focus:border-[#2479a8] focus:ring-2 focus:ring-[#2479a8]/15"
                 />
               </label>
+
+              {(form.category === "Coming Soon" || form.occasion?.includes("Coming Soon")) && (
+                <div className="grid gap-3 rounded-xl border border-[#d9c6b0] bg-[#fffdf8] p-4 sm:col-span-2">
+                  <label className="flex items-center gap-3 text-sm font-bold">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-[#0b4166]"
+                      checked={Boolean(form.preorder_eligible)}
+                      onChange={(event) => setForm({
+                        ...form,
+                        preorder_eligible: event.target.checked,
+                        deposit_percentage: event.target.checked ? Number(form.deposit_percentage ?? 50) : 50,
+                      })}
+                    />
+                    Eligible for reservation / booking
+                  </label>
+                  {form.preorder_eligible && (
+                    <label className="text-sm font-bold">
+                      Deposit percentage
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          step="1"
+                          value={Number(form.deposit_percentage ?? 50)}
+                          onChange={(event) => setForm({
+                            ...form,
+                            deposit_percentage: event.target.value === "" ? 0 : Number(event.target.value),
+                          })}
+                          className="w-28 rounded-xl border border-black/10 bg-white p-3"
+                        />
+                        <span className="text-black/55">%</span>
+                      </div>
+                      <span className="mt-2 block text-xs font-normal text-black/50">
+                        Customers will pay this portion now and the remaining balance later.
+                      </span>
+                    </label>
+                  )}
+                </div>
+              )}
 
               <p className="text-sm text-black/55 sm:col-span-2">Stock allocation is managed in Visual Inventory after the product is saved.</p>
               <div className="sm:col-span-2">

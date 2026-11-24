@@ -30,7 +30,17 @@ export async function resolveServerPreorders(
   ]);
   if (productError || variantError) return { error: "Unable to verify preorder prices." as const };
 
-  const productById = new Map((products ?? []).map((product) => [product.id, product]));
+  const preorderOptions = await supabase
+    .from("products")
+    .select("id,preorder_eligible,deposit_percentage")
+    .in("id", productIds);
+  const preorderOptionsById = new Map(
+    preorderOptions.error ? [] : (preorderOptions.data ?? []).map((product) => [product.id, product]),
+  );
+  const productById = new Map((products ?? []).map((product) => {
+    const options = preorderOptionsById.get(product.id);
+    return [product.id, { ...product, ...options }];
+  }));
   const variantById = new Map((variants ?? []).map((variant) => [variant.id, variant]));
   const resolved: ServerPreorderItem[] = [];
   for (const item of items) {
@@ -46,22 +56,28 @@ export async function resolveServerPreorders(
       return { error: "Selected option is invalid for this preorder." as const };
     }
     const comingSoon = product.category === "Coming Soon" || (Array.isArray(product.occasion) && product.occasion.includes("Coming Soon"));
-    if (item.is_deposit === true && !comingSoon) {
-      return { error: "A 50% deposit is available only for Coming Soon products." as const };
+    if (item.is_deposit === true) {
+      if (!comingSoon) return { error: "A deposit is available only for Coming Soon products." as const };
+      if (product.preorder_eligible !== true) return { error: "This Coming Soon product is not eligible for booking." as const };
     }
     const unitPrice = variant ? Number(variant.price) : Number(product.price);
     if (!Number.isFinite(unitPrice) || unitPrice < 0) {
       return { error: "The selected preorder price is invalid." as const };
     }
     const isDeposit = item.is_deposit === true;
-    const depositAmount = isDeposit ? Math.round(unitPrice * 50) / 100 : unitPrice;
+    const depositPercentage = isDeposit
+      ? Math.max(1, Math.min(100, Number(product.deposit_percentage ?? 50)))
+      : 0;
+    const depositAmount = isDeposit
+      ? Math.round(unitPrice * depositPercentage) / 100
+      : unitPrice;
     const remainingBalance = isDeposit ? Math.round((unitPrice - depositAmount) * quantity * 100) / 100 : 0;
     resolved.push({
       id: item.id,
       variant_id: item.variant_id,
       quantity,
       is_deposit: isDeposit,
-      deposit_percentage: isDeposit ? 50 : 0,
+      deposit_percentage: depositPercentage,
       unit_price: unitPrice,
       deposit_amount: depositAmount,
       remaining_balance: remainingBalance,

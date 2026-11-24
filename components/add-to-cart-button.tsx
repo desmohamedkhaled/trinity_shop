@@ -6,20 +6,29 @@ import { isComingSoonProduct, type Product, type ProductImage, type ProductVaria
 import { useStore } from "@/components/store-provider";
 import { formatAUD } from "@/lib/currency";
 
+
 export function AddToCartButton({ product, variant, image, compact = false, preorder = false }: { product: Product; variant?: ProductVariant; image?: ProductImage; compact?: boolean; preorder?: boolean }) {
   const { addToCart } = useStore();
   const [added, setAdded] = useState(false);
   const comingSoon = isComingSoonProduct(product);
-  const photoMode = product.inventory_mode === "photo" || variant?.inventory_mode === "photo";
+  const preorderEligible = comingSoon && product.preorder_eligible === true;
+  const depositPercentage = preorderEligible
+    ? Math.max(1, Math.min(100, Number(product.deposit_percentage ?? 50)))
+    : 0;
+  const photoMode = (product.inventory_mode === "photo" || variant?.inventory_mode === "photo")
+    && Boolean(variant ? variant.images?.length : product.gallery?.length);
+  const stockAvailable = variant ? variant.stock > 0 : (product.stock ?? 0) > 0;
   const available = comingSoon
     ? Boolean(preorder ? (variant?.price ?? product.price) >= 0 : true)
-    : (photoMode ? Boolean(image && (image.available_quantity ?? 0) > 0) : (variant ? variant.stock : product.stock ?? 0) > 0) && product.stock_status !== "Out of stock";
+    : photoMode
+      ? Boolean(image && (image.available_quantity ?? 0) > 0)
+      : stockAvailable;
   function add() {
     if (!available) return;
-    if (comingSoon && preorder) {
+    if (preorderEligible && preorder) {
       const price = variant?.price ?? product.price;
-      const deposit = Math.round(price * 100 * 0.5) / 100;
-      addToCart(product, variant, image, { is_deposit: true, deposit_percentage: 50, remaining_balance: Math.round((price - deposit) * 100) / 100 });
+      const deposit = Math.round(price * depositPercentage) / 100;
+      addToCart(product, variant, image, { is_deposit: true, deposit_percentage: depositPercentage, remaining_balance: Math.round((price - deposit) * 100) / 100 });
     } else if (comingSoon) {
       addToCart(product, variant, image, { is_deposit: false, deposit_percentage: 0, remaining_balance: 0 });
     } else {
@@ -29,9 +38,9 @@ export function AddToCartButton({ product, variant, image, compact = false, preo
     window.setTimeout(() => setAdded(false), 1800);
   }
   const label = comingSoon
-    ? preorder
-      ? `Reserve with 50% Deposit — ${formatAUD(Math.round((variant?.price ?? product.price) * 100 * 0.5) / 100)}`
-      : `Pay Full Amount — ${formatAUD(variant?.price ?? product.price)}`
+    ? preorderEligible && preorder
+      ? `Reserve with ${depositPercentage}% Deposit — ${formatAUD(Math.round((variant?.price ?? product.price) * depositPercentage) / 100)}`
+      : "Add to cart"
     : !available
       ? "Out of stock"
       : added

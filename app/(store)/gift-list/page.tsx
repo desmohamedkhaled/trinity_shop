@@ -58,7 +58,7 @@ export default function GiftList() {
             <div className="pattern-bg mt-10 rounded-[30px] p-10 text-center md:p-16">
               <p className="text-lg font-bold text-[#083b68]">Your wishlist is empty.</p>
               <p className="mx-auto mt-2 max-w-md text-sm text-black/55">Tap the heart on any gift to save it here for later.</p>
-              <Link href="/shop" className="mt-6 inline-flex rounded-full bg-[#083b68] px-6 py-3 font-bold text-white transition hover:bg-[#1267a8]">Explore gifts</Link>
+              <Link href="/shop" style={{ color: "#fff" }} className="mt-6 inline-flex rounded-full bg-[#083b68] px-6 py-3 font-bold text-white transition hover:bg-[#1267a8]">Explore gifts</Link>
             </div>
           ) : (
             <>

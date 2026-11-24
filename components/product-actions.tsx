@@ -11,10 +11,11 @@ import { AddToCartButton } from "@/components/add-to-cart-button";
 export function ProductActions({ product, variant, image }: { product: Product; variant?: ProductVariant; image?: ProductImage }) {
   const { toggleGiftList, isInGiftList } = useStore();
   const comingSoon = isComingSoonProduct(product);
+  const preorderEligible = comingSoon && product.preorder_eligible === true;
 
   return (
     <div className="flex flex-wrap gap-3">
-      {comingSoon ? (
+      {preorderEligible ? (
         <>
           <AddToCartButton product={product} variant={variant} image={image} preorder />
           <AddToCartButton product={product} variant={variant} image={image} />

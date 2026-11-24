@@ -3,7 +3,6 @@ import {
   Boxes,
   Calendar,
   ClipboardList,
-  FileImage,
   Gift,
   Heart,
   LayoutDashboard,
@@ -28,7 +27,6 @@ export const adminNavigation: AdminNavigationItem[] = [
   { href: "/admin/inventory", label: "Inventory", permission: "inventory.read", icon: Boxes },
   { href: "/admin/occasions", label: "Occasions", permission: "occasions.read", icon: Gift },
   { href: "/admin/events", label: "Events", permission: "events.read", icon: Calendar },
-  { href: "/admin/media", label: "Media", permission: "media.read", icon: FileImage },
   { href: "/admin/orders", label: "Requests / Orders", permission: "orders.read", icon: ClipboardList },
   { href: "/admin/customers", label: "Customers", permission: "customers.read", icon: Users },
   { href: "/admin/gift-lists", label: "Gift Lists", permission: "gift_lists.read", icon: Heart },
@@ -40,3 +38,5 @@ export const adminNavigation: AdminNavigationItem[] = [
 export const adminPagePermissions = Object.fromEntries(
   adminNavigation.map(({ href, permission }) => [href, permission])
 ) as Record<string, AdminPermission>;
+
+adminPagePermissions["/admin/media"] = "media.read";

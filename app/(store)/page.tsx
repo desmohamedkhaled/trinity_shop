@@ -10,12 +10,14 @@ import { SectionTitle } from "@/components/section-title";
 import { EventCard } from "@/components/event-card";
 import { getOccasions, getProducts } from "@/lib/catalog";
 import { getHomepageUpcomingEvents } from "@/lib/events";
+import { getHomepageContent } from "@/lib/homepage-content-server";
 
 export default async function Home() {
-  const [occasions, products, events] = await Promise.all([
+  const [occasions, products, events, content] = await Promise.all([
     getOccasions(),
     getProducts(),
     getHomepageUpcomingEvents(4),
+    getHomepageContent(),
   ]);
 
   return (
@@ -83,26 +85,24 @@ export default async function Home() {
           <div className="trinity-container grid max-w-6xl items-center gap-14 md:grid-cols-2">
             <div>
               <p className="text-xs font-bold uppercase tracking-[.28em] text-[#b48d55]">
-                The Trinity story
+                {content.trinity_story_eyebrow}
               </p>
 
               <h2 className="display-font mt-4 text-5xl md:text-6xl">
-                More than a gift.
+                {content.trinity_story_title}
                 <br />
-                <i>A meaning.</i>
+                <i>{content.trinity_story_emphasis}</i>
               </h2>
 
               <p className="mt-6 max-w-lg leading-8 text-black/60">
-                Trinity is built around the idea that the best gifts do more
-                than look beautiful. They remember a person, honor a
-                milestone, or keep faith close to the heart.
+                {content.trinity_story_text}
               </p>
 
               <Link
                 href="/our-story"
                 className="mt-7 inline-flex items-center gap-2 font-bold text-[#5d3b2a] transition hover:text-[#472d23]"
               >
-                Discover our story
+                {content.trinity_story_link}
                 <ArrowRight size={17} />
               </Link>
             </div>
@@ -150,23 +150,44 @@ export default async function Home() {
         <section className="bg-[#5d3b2a] px-5 py-28 text-white">
           <div className="mx-auto max-w-4xl text-center">
             <p className="text-xs font-bold uppercase tracking-[.28em] text-white/60">
-              Not sure what to give?
+              {content.gift_finder_eyebrow}
             </p>
 
             <h2 className="display-font mt-4 text-5xl md:text-7xl">
-              Let meaning guide you.
+              {content.gift_finder_title}
             </h2>
 
             <p className="mx-auto mt-6 max-w-xl text-white/70">
-              Tell us who you are gifting for and what you are celebrating.
-              Our Gift Finder will narrow the collection for you.
+              {content.gift_finder_text}
             </p>
 
             <Link
               href="/gift-finder"
+              style={{ color: "#000" }}
               className="mt-8 inline-block rounded-full bg-[#f6f0e7] px-7 py-4 text-sm font-bold text-[#5d3b2a] transition hover:-translate-y-1 hover:bg-white hover:text-[#5d3b2a]"
             >
-              Start Gift Finder
+              {content.gift_finder_button}
+            </Link>
+          </div>
+        </section>
+
+        {/* Final CTA */}
+        <section className="bg-[#f3e9dc] px-5 py-20 md:py-24">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-bold uppercase tracking-[.28em] text-[#b48d55]">
+              {content.final_cta_eyebrow}
+            </p>
+            <h2 className="display-font mt-4 text-4xl md:text-6xl">
+              {content.final_cta_title}
+            </h2>
+            <p className="mx-auto mt-5 max-w-xl leading-7 text-black/60">
+              {content.final_cta_text}
+            </p>
+            <Link
+              href="/shop"
+              className="mt-8 inline-flex rounded-full bg-[#5d3b2a] px-7 py-4 text-sm font-bold text-white transition hover:bg-[#472d23]"
+            >
+              {content.final_cta_button}
             </Link>
           </div>
         </section>

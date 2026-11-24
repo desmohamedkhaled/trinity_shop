@@ -7,6 +7,17 @@ function dimension(value: unknown) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
+function preorderSettings(value: unknown) {
+  const body = value as { preorder_eligible?: unknown; deposit_percentage?: unknown };
+  const eligible = body.preorder_eligible === true;
+  const percentage = Number(body.deposit_percentage);
+  if (!eligible) return { preorder_eligible: false, deposit_percentage: 50 };
+  if (!Number.isInteger(percentage) || percentage < 1 || percentage > 100) {
+    throw new Error('Deposit percentage must be an integer from 1 to 100.');
+  }
+  return { preorder_eligible: true, deposit_percentage: percentage };
+}
+
 function validateVariants(value: unknown) {
   if (!Array.isArray(value)) return null;
   const names = new Set<string>();
@@ -85,6 +96,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if (row.price !== undefined && (!Number.isFinite(row.price) || row.price < 0)) {
     return NextResponse.json({ error: 'Price must be a non-negative number.' }, { status: 400 });
+  }
+  if (b.preorder_eligible !== undefined || b.deposit_percentage !== undefined) {
+    try {
+      Object.assign(row, preorderSettings(b));
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid preorder settings.' }, { status: 400 });
+    }
   }
   if (['length', 'width', 'height', 'weight'].some((key) => row[key] === undefined && b[key] !== undefined)) {
     return NextResponse.json({ error: 'Dimensions must be non-negative numbers.' }, { status: 400 });

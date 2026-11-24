@@ -32,7 +32,7 @@ function normalizeItems(items: Item[]) {
       image_id: item.image_id,
       quantity: (current?.quantity || 0) + quantity,
       is_deposit: item.is_deposit === true,
-      deposit_percentage: item.is_deposit === true ? 50 : 0,
+      deposit_percentage: item.is_deposit === true ? item.deposit_percentage ?? 0 : 0,
       remaining_balance: 0,
     });
   }

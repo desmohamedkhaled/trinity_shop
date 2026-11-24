@@ -75,7 +75,10 @@ export default function InventoryPage() {
     }
     return next;
   }, [products, staged]);
-  const occasions = Array.from(new Set(products.flatMap((item) => item.occasion ?? []))).sort();
+  const occasions = Array.from(new Set([
+    ...products.flatMap((item) => item.occasion ?? []),
+    "Coming Soon",
+  ])).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
 
   useEffect(() => {
     if (product && product.id !== selectedId) setSelectedId(product.id);
@@ -97,6 +100,7 @@ export default function InventoryPage() {
 
   async function save() {
     if (!changes.length) return;
+    const savedChanges = changes;
     setSaving(true);
     setError("");
     setMessage("");
@@ -104,12 +108,45 @@ export default function InventoryPage() {
       const response = await fetch("/api/admin/inventory/batch-update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changes }),
+        body: JSON.stringify({ changes: savedChanges }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not save inventory changes");
       setMessage(`${data.updated} inventory change${data.updated === 1 ? "" : "s"} saved.`);
-      await load(true);
+      setProducts((current) => current.map((item) => {
+        if (!item.product_variants?.length) {
+          const productChange = savedChanges.find((change) => change.productId === item.id);
+          return productChange ? { ...item, stock: productChange.value } : item;
+        }
+
+        let variantChanged = false;
+        const nextVariants = item.product_variants.map((variant) => {
+          if (!variant.product_variant_images?.length) return variant;
+          let imagesChanged = false;
+          const nextImages = variant.product_variant_images.map((image) => {
+            const imageChange = savedChanges.find((change) => change.imageId === image.id);
+            if (!imageChange) return image;
+            imagesChanged = true;
+            variantChanged = true;
+            return { ...image, available_quantity: imageChange.value };
+          });
+          if (!imagesChanged) return variant;
+          return {
+            ...variant,
+            stock: nextImages.reduce((total, image) => total + image.available_quantity, 0),
+            product_variant_images: nextImages,
+          };
+        });
+
+        if (!variantChanged) return item;
+        return {
+          ...item,
+          inventory_mode: "photo",
+          stock: nextVariants.reduce((total, variant) => total + variant.stock, 0),
+          product_variants: nextVariants,
+        };
+      }));
+      setStaged({});
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not save inventory changes");
     } finally {
@@ -133,7 +170,7 @@ export default function InventoryPage() {
     <p className="mt-2 text-sm text-black/50">Stage photo-level stock changes locally, then save them together.</p>
     <div className="sticky top-0 z-10 mt-6 grid gap-3 rounded-2xl border border-black/10 bg-[#fffaf3]/95 p-3 shadow-sm backdrop-blur md:grid-cols-[minmax(0,1fr)_180px_auto_auto]">
       <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title, SKU or keyword" aria-label="Search title, SKU or keyword" className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm" />
-      <select value={occasion} onChange={(event) => setOccasion(event.target.value)} aria-label="Filter by occasion" className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"><option value="all">All occasions</option>{occasions.map((item) => <option key={item}>{item}</option>)}<option value="Coming Soon">Coming Soon</option></select>
+      <select value={occasion} onChange={(event) => setOccasion(event.target.value)} aria-label="Filter by occasion" className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"><option value="all">All occasions</option>{occasions.map((item) => <option key={item}>{item}</option>)}</select>
       <span className="self-center text-sm text-black/55">{filteredProducts.length} products</span>
       <button type="button" onClick={() => void load()} disabled={loading || saving} className="rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50">Refresh</button>
     </div>

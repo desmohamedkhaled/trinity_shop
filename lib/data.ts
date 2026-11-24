@@ -25,6 +25,7 @@ export type Product = {
   is_deposit?: boolean;
   deposit_percentage?: number;
   remaining_balance?: number;
+  preorder_eligible?: boolean;
 };
 
 export function isComingSoonProduct(product: Pick<Product, "category" | "occasion">) {

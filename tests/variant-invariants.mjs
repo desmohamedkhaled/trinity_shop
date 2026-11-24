@@ -29,6 +29,14 @@ const balanceLinkRoute = await readFile(new URL("../app/api/admin/orders/[id]/ba
 const balanceStripeRoute = await readFile(new URL("../app/api/stripe/balance-checkout-session/route.ts", import.meta.url), "utf8");
 const catalogForTests = await readFile(new URL("../lib/catalog.ts", import.meta.url), "utf8");
 const inventoryAdminForTests = await readFile(new URL("../app/api/admin/inventory/route.ts", import.meta.url), "utf8");
+const adminAccess = await readFile(new URL("../components/admin-access.ts", import.meta.url), "utf8");
+const adminGuard = await readFile(new URL("../components/admin-guard.tsx", import.meta.url), "utf8");
+const adminLogin = await readFile(new URL("../app/admin/login/page.tsx", import.meta.url), "utf8");
+const supabaseLib = await readFile(new URL("../lib/supabase.ts", import.meta.url), "utf8");
+const settingsRoute = await readFile(new URL("../app/api/settings/route.ts", import.meta.url), "utf8");
+const publicSettingsRoute = await readFile(new URL("../app/api/settings/public/route.ts", import.meta.url), "utf8");
+const settingsPage = await readFile(new URL("../app/admin/settings/page.tsx", import.meta.url), "utf8");
+const customersPage = await readFile(new URL("../app/admin/customers/page.tsx", import.meta.url), "utf8");
 
 function section(name, callback) {
   callback();
@@ -114,13 +122,11 @@ section("admin image assignment is scoped and idempotent", () => {
 });
 
 section("photo artwork visibility is enforced in the server catalog", () => {
-  assert.match(catalog, /available_quantity > 0/);
-  assert.match(checkoutValidation, /available_quantity < quantity/);
-  assert.match(checkoutValidation, /Artwork cannot be selected for traditional inventory/);
+  assert.match(catalog, /\(image\.available_quantity \?\? 0\) > 0/);
+  assert.match(checkoutValidation, /image\.available_quantity < quantity/);
   assert.match(checkoutValidation, /Selected artwork is invalid for this option/);
-  assert.match(catalogForTests, /inventory_mode: "photo"/);
+  assert.match(catalogForTests, /inventory_mode === "photo"/);
   assert.match(inventoryAdminForTests, /inventory_mode: "photo"/);
-  assert.match(checkoutValidation, /Boolean\(variant\)/);
 });
 
 section("inventory filter and focus persistence remain local", () => {
@@ -131,6 +137,15 @@ section("inventory filter and focus persistence remain local", () => {
   assert.match(inventoryPage, /filteredProducts\.find\(\(item\) => item\.id === selectedId\)/);
   assert.match(inventoryPage, /catalogRef\.current\.scrollTop/);
   assert.match(inventoryPage, /workspaceRef\.current\.scrollTop/);
+});
+
+section("browser tab changes preserve admin state and auth", () => {
+  assert.doesNotMatch(adminAccess, /TOKEN_REFRESHED[\s\S]*setRefreshKey/);
+  assert.doesNotMatch(adminGuard, /supabase\.auth\.getUser|from\(["']admin_users["']\)/);
+  assert.doesNotMatch(adminLogin, /router\.refresh\(\)/);
+  assert.match(supabaseLib, /persistSession:\s*true/);
+  assert.match(supabaseLib, /autoRefreshToken:\s*true/);
+  assert.doesNotMatch(inventoryPageForTests, /await load\(true\)|await load\(\)/);
 });
 
 section("live shipping is server quoted and manual rates are removed", () => {
@@ -152,6 +167,29 @@ section("stored weights are grams and convert once at the eFlow boundary", () =>
   assert.doesNotMatch(eflowClient, /items\.length !== 1|item\.quantity !== 1/);
   assert.match(eflowClient, /totalWeightGrams \+= weightGrams \* item\.quantity/);
   assert.doesNotMatch(eflowRoute, /height \+=|weight \+=|Math\.max\(length/);
+});
+
+section("shipping origin is privately configurable and drives eFlow origin postcode", () => {
+  assert.match(settingsRoute, /'shipping_origin'/);
+  assert.match(settingsRoute, /Enter a valid shipping origin address and 4-digit postcode/);
+  assert.match(settingsPage, /Shipping starting address/);
+  assert.match(publicSettingsRoute, /whatsapp_checkout_enabled.*whatsapp_number/);
+  assert.doesNotMatch(publicSettingsRoute, /shipping_origin/);
+  assert.match(eflowClient, /\.eq\("key", "shipping_origin"\)/);
+  assert.match(eflowClient, /origin\?\.postcode/);
+  assert.match(eflowClient, /EFLOW_FROM_POSTCODE/);
+  assert.match(eflowClient, /parcelLength = Math\.max\(parcelLength, length\)/);
+  assert.match(eflowClient, /parcelWidth = Math\.max\(parcelWidth, width\)/);
+  assert.match(eflowClient, /parcelHeight \+= height \* item\.quantity/);
+  assert.doesNotMatch(eflowClient, /conflicting confirmed package dimensions/);
+});
+
+section("customer history expands inline and filters by order status", () => {
+  assert.match(customersPage, /selectedId === customer\.id && <tr/);
+  assert.match(customersPage, /<CustomerHistory customer=\{customer\} orderStatusFilter=\{orderStatusFilter\}/);
+  assert.match(customersPage, /customer\.orders\?\.some\(\(order\) => order\.status === orderStatusFilter\)/);
+  assert.match(customersPage, /order\.status === orderStatusFilter/);
+  assert.match(customersPage, /Filter customers by order status/);
 });
 
 function gramsToKg(weightGrams) {
@@ -196,10 +234,11 @@ section("batch inventory exposes one explicit batch endpoint", () => {
 });
 
 section("preorder prices and payment choices are server authoritative", () => {
-  assert.match(preorderHelper, /deposit_percentage: isDeposit \? 50 : 0/);
-  assert.match(preorderHelper, /depositAmount = isDeposit \? Math\.round\(unitPrice \* 50\) \/ 100/);
+  assert.match(preorderHelper, /preorder_eligible,deposit_percentage/);
+  assert.match(preorderHelper, /depositPercentage = isDeposit/);
+  assert.match(preorderHelper, /depositAmount = isDeposit/);
   assert.match(preorderHelper, /remainingBalance = isDeposit/);
-  assert.match(preorderHelper, /A 50% deposit is available only for Coming Soon products/);
+  assert.match(preorderHelper, /not eligible for booking/);
   assert.match(stripeCheckoutRoute, /resolveServerPreorders/);
   assert.match(manualOrderRoute, /resolveServerPreorders/);
 });

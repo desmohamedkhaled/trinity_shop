@@ -181,7 +181,7 @@ alter table site_settings enable row level security;
 alter table admin_users enable row level security;
 alter table request_items enable row level security;
 
-create policy "public can read checkout settings" on site_settings for select using (key in ('whatsapp_checkout_enabled','whatsapp_number','store_name'));
+create policy "public can read storefront settings" on site_settings for select using (key in ('whatsapp_checkout_enabled','whatsapp_number','phone_number','store_name','hero_title','hero_subtitle','trinity_story_eyebrow','trinity_story_title','trinity_story_emphasis','trinity_story_text','trinity_story_link','gift_finder_eyebrow','gift_finder_title','gift_finder_text','gift_finder_button','final_cta_eyebrow','final_cta_title','final_cta_text','final_cta_button'));
 create policy "admins can read settings" on site_settings for select using (exists (select 1 from admin_users a where a.id = auth.uid() and a.is_active = true));
 create policy "admins can write settings" on site_settings for all using (exists (select 1 from admin_users a where a.id = auth.uid() and a.is_active = true)) with check (exists (select 1 from admin_users a where a.id = auth.uid() and a.is_active = true));
 

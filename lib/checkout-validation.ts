@@ -33,16 +33,18 @@ export async function validateCheckoutItems(
     const quantity = Number(item.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) return "Each cart quantity must be a positive integer.";
     const product = item.id ? productById.get(item.id) : undefined;
-    if (!product || !product.is_published || product.stock_status === "Out of stock") return "Product is unavailable.";
+    if (!product || !product.is_published) return "Product is unavailable.";
     const variant = item.variant_id ? variantById.get(item.variant_id) : undefined;
     if (item.variant_id && (!variant || variant.product_id !== product.id)) return "Selected option is invalid for this product.";
-    const photoMode = Boolean(variant) || product.inventory_mode === "photo";
-    if (photoMode && (!variant || !item.image_id)) return "Photo inventory requires a selected option and artwork.";
-    if (!photoMode && item.image_id) return "Artwork cannot be selected for traditional inventory.";
+    const imageAssigned = Boolean(item.image_id);
     if (item.image_id) {
       const image = imageById.get(item.image_id);
       if (!variant || !image || image.variant_id !== variant.id) return "Selected artwork is invalid for this option.";
       if (image.available_quantity < quantity) return "Selected artwork does not have enough stock.";
+    } else if (variant) {
+      if (variant.stock < quantity) return "Selected option does not have enough stock.";
+    } else if (!imageAssigned && (product.stock ?? 0) < quantity) {
+      return "Product does not have enough stock.";
     }
   }
   return null;
