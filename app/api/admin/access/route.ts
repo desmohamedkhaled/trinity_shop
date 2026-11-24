@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentAdminAccess } from "@/lib/admin";
 
+
 export async function GET() {
   const { user, admin, permissions } = await currentAdminAccess();
   if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
